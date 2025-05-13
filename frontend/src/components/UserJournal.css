@@ -1,0 +1,194 @@
+/* Добавьте эти стили в ваш файл UserJournal.css */
+
+.journal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.home-button {
+  background-color: #4a6fa5;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 25px;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 120px;
+  height: 40px;
+}
+
+.home-button:hover {
+  background-color: #3a5a80;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.home-button:active {
+  transform: translateY(0);
+}
+
+/* Остальные существующие стили... */
+.journal-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.loading, .error {
+  text-align: center;
+  padding: 20px;
+  font-size: 1.1rem;
+}
+
+.error {
+  color: #e74c3c;
+}
+
+.empty {
+  text-align: center;
+  padding: 40px;
+  font-size: 1.1rem;
+  color: #666;
+}
+
+.entries {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
+.entry {
+  display: flex;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: white;
+}
+
+.image-wrapper {
+  width: 250px;
+  min-height: 180px;
+  overflow: hidden;
+}
+
+.image-wrapper img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.entry:hover .image-wrapper img {
+  transform: scale(1.05);
+}
+
+.content {
+  flex: 1;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  color: #2c3e50;
+}
+
+.source {
+  background-color: #f0f0f0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.description {
+  color: #555;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin-bottom: 15px;
+  flex-grow: 1;
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.date {
+  font-size: 0.85rem;
+  color: #7f8c8d;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+}
+
+.link {
+  color: #4a6fa5;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.link:hover {
+  color: #3a5a80;
+  text-decoration: underline;
+}
+
+.delete-btn {
+  background-color: #f8f9fa;
+  color: #e74c3c;
+  border: 1px solid #ddd;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.delete-btn:hover {
+  background-color: #e74c3c;
+  color: white;
+  border-color: #e74c3c;
+}
+
+@media (max-width: 768px) {
+  .entry {
+    flex-direction: column;
+  }
+  
+  .image-wrapper {
+    width: 100%;
+    height: 180px;
+  }
+  
+  .journal-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .home-button {
+    width: 100%;
+  }
+}
