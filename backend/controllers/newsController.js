@@ -195,23 +195,13 @@ exports.proxyGNewsAPI = async (req, res) => {
       max = 10
     } = req.query;
     if (!process.env.GNEWS_API_KEY) {
-      return res.status(500).json({
-        error: 'Server configuration error',
-        details: 'GNEWS_API_KEY is not configured'
-      });
+      return res.status(500).json({error: 'Ошибка сервера', details: 'GNEWS_API_KEY не настроен'});
     }
-    const params = {
-      token: process.env.GNEWS_API_KEY,
-      country,
-      lang,
-      max
-    };
+    const params = { token: process.env.GNEWS_API_KEY, country, lang, max};
     if (category) params.category = category;
     if (query) params.q = query;
-    const response = await axios.get('https://gnews.io/api/v4/top-headlines ', {
-      params,
-      timeout: 10000
-    });
+    const response = await axios.get('https://gnews.io/api/v4/top-headlines ', {params, timeout: 10000}
+    );
     const formattedArticles = response.data.articles.map(article => ({
       source: {
         id: article.source?.name.toLowerCase().replace(/\s+/g, '-'),
@@ -225,7 +215,6 @@ exports.proxyGNewsAPI = async (req, res) => {
       publishedAt: article.publishedAt,
       content: article.content
     }));
-
     res.json({
       status: "ok",
       totalResults: response.data.totalArticles,
