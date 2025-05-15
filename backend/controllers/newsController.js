@@ -32,23 +32,16 @@ exports.addToJournal = async (req, res) => {
       keywords = [],
       categories = ['general']
     } = req.body;
-
-    // Валидация
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       return res.status(400).json({ message: 'Неверный ID пользователя' });
     }
-
     if (!url) {
       return res.status(400).json({ message: 'URL обязателен' });
     }
-
-    // Проверка существования пользователя
     const userExists = await User.exists({ _id: userId });
     if (!userExists) {
       return res.status(404).json({ message: 'Пользователь не найден' });
     }
-
-    // Проверка на дубликаты
     const existingEntry = await News.findOne({ userId, url });
     if (existingEntry) {
       return res.status(409).json({ 
@@ -56,8 +49,6 @@ exports.addToJournal = async (req, res) => {
         entry: existingEntry
       });
     }
-
-    // Создание новой записи
     const newEntry = new News({
       userId,
       url,
@@ -73,17 +64,12 @@ exports.addToJournal = async (req, res) => {
       sentiment: analyzeSentiment(title + ' ' + description),
       isFavorite: false
     });
-
     const savedEntry = await newEntry.save();
-    
-    // Обновляем пользователя без транзакции
     await User.findByIdAndUpdate(
       userId,
       { $push: { journalEntries: savedEntry._id } }
     );
-
     console.log('Сохранённая запись:', JSON.stringify(savedEntry, null, 2));
-    
     return res.status(201).json({
       message: 'Новость успешно добавлена',
       entry: savedEntry
@@ -195,6 +181,75 @@ exports.deleteFromJournal = async (req, res) => {
       message: 'Failed to delete entry',
       error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
+  }
+};
+
+
+exports.proxyGNewsAPI = async (req, res) => {
+  try {
+    const {
+      country = 'us',
+      lang = 'en',
+      category,
+      query,
+      max = 10
+    } = req.query;
+    if (!process.env.GNEWS_API_KEY) {
+      return res.status(500).json({
+        error: 'Server configuration error',
+        details: 'GNEWS_API_KEY is not configured'
+      });
+    }
+    const params = {
+      token: process.env.GNEWS_API_KEY,
+      country,
+      lang,
+      max
+    };
+    if (category) params.category = category;
+    if (query) params.q = query;
+    const response = await axios.get('https://gnews.io/api/v4/top-headlines ', {
+      params,
+      timeout: 10000
+    });
+    const formattedArticles = response.data.articles.map(article => ({
+      source: {
+        id: article.source?.name.toLowerCase().replace(/\s+/g, '-'),
+        name: article.source?.name
+      },
+      author: article.author || 'Unknown',
+      title: article.title,
+      description: article.description,
+      url: article.url,
+      urlToImage: article.image,
+      publishedAt: article.publishedAt,
+      content: article.content
+    }));
+
+    res.json({
+      status: "ok",
+      totalResults: response.data.totalArticles,
+      articles: formattedArticles
+    });
+
+  } catch (error) {
+    console.error('GNews API error:', {
+      message: error.message,
+      config: error.config,
+      response: error.response?.data
+    });
+
+    const statusCode = error.response?.status || 500;
+    const errorData = {
+      error: 'Failed to fetch from GNews API',
+      details: error.message
+    };
+
+    if (error.response?.data) {
+      errorData.apiError = error.response.data;
+    }
+
+    res.status(statusCode).json(errorData);
   }
 };
 
