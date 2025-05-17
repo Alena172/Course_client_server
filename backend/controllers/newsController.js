@@ -15,6 +15,88 @@ exports.deleteNews = async (req, res) => {
 };
 
 
+
+// В начале файла, где объявлены кэши
+const userProfileCache = new Map();
+
+// Добавляем функцию для очистки кэша профиля пользователя
+function clearUserProfileCache(userId) {
+  const keysToDelete = [];
+  for (const [key] of userProfileCache) {
+    if (key.startsWith(`profile-${userId}-`)) {
+      keysToDelete.push(key);
+    }
+  }
+  keysToDelete.forEach(key => userProfileCache.delete(key));
+}
+
+
+exports.proxySearchNews = async (req, res) => {
+  const { q, lang = 'ru', after } = req.query;
+
+  if (!process.env.GNEWS_API_KEY) {
+    return res.status(500).json({ error: 'API-ключ для GNews не задан' });
+  }
+
+  if (!q || q.trim().length < 3) {
+    return res.status(400).json({ error: 'Поисковый запрос должен содержать минимум 3 символа' });
+  }
+
+  try {
+    const response = await axios.get('https://gnews.io/api/v4/search ', {
+      params: {
+        q,
+        lang,
+        token: process.env.GNEWS_API_KEY,
+      },
+      timeout: 10000
+    });
+
+    const newArticles = response.data.articles || [];
+
+    // Сортировка по дате, чтобы гарантировать порядок
+    const sortedArticles = newArticles.sort((a, b) =>
+      new Date(b.publishedAt) - new Date(a.publishedAt)
+    );
+
+    // Возвращаем только те статьи, которые меньше `after`
+    const filteredArticles = after
+      ? sortedArticles.filter(article => new Date(article.publishedAt) < new Date(after))
+      : sortedArticles;
+
+    // Если есть статьи — отправляем их
+    if (filteredArticles.length > 0) {
+      const lastPublishedAt = filteredArticles[filteredArticles.length - 1].publishedAt;
+      res.json({
+        articles: filteredArticles,
+        lastPublishedAt
+      });
+    } else {
+      res.json({
+        articles: [],
+        message: 'Больше статей нет'
+      });
+    }
+  } catch (error) {
+    console.error('Ошибка при обращении к GNews:', {
+      message: error.message,
+      status: error.response?.status,
+      data: error.response?.data
+    });
+
+    if (error.code === 'ECONNABORTED') {
+      return res.status(504).json({ error: 'Превышено время ожидания ответа от GNews' });
+    }
+
+    if (error.response?.status === 429) {
+      return res.status(503).json({ error: 'Превышен лимит запросов к GNews API' });
+    }
+
+    res.status(500).json({ error: 'Ошибка при обращении к GNews API' });
+  }
+};
+
+// Обновленный метод addToJournal
 exports.addToJournal = async (req, res) => {
   try {
     console.log('Полученные данные:', JSON.stringify(req.body, null, 2));
@@ -32,16 +114,19 @@ exports.addToJournal = async (req, res) => {
       keywords = [],
       categories = ['general']
     } = req.body;
+
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       return res.status(400).json({ message: 'Неверный ID пользователя' });
     }
     if (!url) {
       return res.status(400).json({ message: 'URL обязателен' });
     }
+
     const userExists = await User.exists({ _id: userId });
     if (!userExists) {
       return res.status(404).json({ message: 'Пользователь не найден' });
     }
+
     const existingEntry = await News.findOne({ userId, url });
     if (existingEntry) {
       return res.status(409).json({ 
@@ -49,6 +134,7 @@ exports.addToJournal = async (req, res) => {
         entry: existingEntry
       });
     }
+
     const newEntry = new News({
       userId,
       url,
@@ -61,14 +147,20 @@ exports.addToJournal = async (req, res) => {
       author,
       keywords,
       categories,
-      sentiment: analyzeSentiment(title + ' ' + description),
       isFavorite: false
     });
+
     const savedEntry = await newEntry.save();
     await User.findByIdAndUpdate(
       userId,
       { $push: { journalEntries: savedEntry._id } }
     );
+
+    // Очищаем кэш профиля пользователя
+    clearUserProfileCache(userId);
+    // Также очищаем кэш рекомендаций для этого пользователя
+    clearRecommendationCache(userId);
+
     console.log('Сохранённая запись:', JSON.stringify(savedEntry, null, 2));
     return res.status(201).json({
       message: 'Новость успешно добавлена',
@@ -88,59 +180,7 @@ exports.addToJournal = async (req, res) => {
   }
 };
 
-exports.getUserJournal = async (req, res) => {
-  try {
-    const { userId } = req.params;
-    
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ message: 'Неверный ID пользователя' });
-    }
-
-    const entries = await News.find({ userId })
-      .sort({ publishedAt: -1 })
-      .lean();
-
-    if (!entries || entries.length === 0) {
-      return res.status(200).json([]);
-    }
-
-    res.status(200).json(entries);
-  } catch (err) {
-    console.error('Ошибка получения журнала:', err);
-    res.status(500).json({ 
-      message: 'Ошибка при получении журнала',
-      error: err.message 
-    });
-  }
-};
-
-exports.updateJournalEntry = async (req, res) => {
-  try {
-    const { entryId } = req.params;
-    const updates = req.body;
-
-    const updatedEntry = await News.findByIdAndUpdate(
-      entryId,
-      { $set: updates },
-      { new: true, runValidators: true }
-    );
-
-    if (!updatedEntry) {
-      return res.status(404).json({ message: 'Запись не найдена' });
-    }
-
-    res.json({
-      message: 'Запись успешно обновлена',
-      entry: updatedEntry
-    });
-  } catch (err) {
-    res.status(500).json({ 
-      message: 'Ошибка при обновлении',
-      error: err.message 
-    });
-  }
-};
-
+// Аналогично обновляем deleteFromJournal
 exports.deleteFromJournal = async (req, res) => {
   const { entryId } = req.params;
 
@@ -152,18 +192,21 @@ exports.deleteFromJournal = async (req, res) => {
   }
 
   try {
-    // Find the entry first
     const entry = await News.findById(entryId);
     if (!entry) {
       return res.status(404).json({ message: 'Entry not found' });
     }
 
-    // Perform operations without transaction
     await News.deleteOne({ _id: entryId });
     await User.updateOne(
       { _id: entry.userId },
       { $pull: { journalEntries: entryId } }
     );
+
+    // Очищаем кэш профиля пользователя
+    clearUserProfileCache(entry.userId);
+    // Также очищаем кэш рекомендаций для этого пользователя
+    clearRecommendationCache(entry.userId);
 
     res.json({ 
       success: true,
@@ -183,6 +226,52 @@ exports.deleteFromJournal = async (req, res) => {
     });
   }
 };
+
+
+// Добавляем функцию для очистки кэша рекомендаций
+function clearRecommendationCache(userId) {
+  const keysToDelete = [];
+  for (const [key] of recommendationCache) {
+    if (key.startsWith(`${userId}-`)) {
+      keysToDelete.push(key);
+    }
+  }
+  keysToDelete.forEach(key => recommendationCache.delete(key));
+}
+
+// Обновляем функцию getUserJournal для принудительного обновления кэша
+exports.getUserJournal = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'Неверный ID пользователя' });
+    }
+
+    // При запросе журнала также очищаем кэш профиля (опционально)
+    clearUserProfileCache(userId);
+
+    const entries = await News.find({ userId })
+      .sort({ publishedAt: -1 })
+      .lean();
+
+    if (!entries || entries.length === 0) {
+      return res.status(200).json([]);
+    }
+
+    res.status(200).json(entries);
+  } catch (err) {
+    console.error('Ошибка получения журнала:', err);
+    res.status(500).json({ 
+      message: 'Ошибка при получении журнала',
+      error: err.message 
+    });
+  }
+};
+
+
+
+
 
 
 exports.proxyGNewsAPI = async (req, res) => {
@@ -242,232 +331,106 @@ exports.proxyGNewsAPI = async (req, res) => {
   }
 };
 
+
 const natural = require('natural');
-const { SentimentAnalyzer } = require('natural');
 const { WordTokenizer } = natural;
 const tokenizer = new WordTokenizer();
 
-// Кэш для хранения результатов запросов к NewsAPI
-const recommendationCache = new Map();
+// Конфигурация
 const CACHE_TTL = 5 * 60 * 1000; // 5 минут
+const MAX_USER_HISTORY = 100;
+const RECOMMENDATION_POOL_SIZE = 100;
+const FALLBACK_STRATEGIES = ['headlines', 'trending', 'popular'];
 
+// Кэш для хранения результатов
+const recommendationCache = new Map();
+
+// Основная функция получения рекомендаций
 exports.getRecommendations = async (req, res) => {
   try {
     const { userId } = req.params;
     const {
-      version = 0,
-      page = 1, // Добавляем параметр страницы
-      limit = 6, // Лимит на страницу
+      page = 1,
+      limit = 10, // Фиксируем лимит в 10 рекомендаций
       likedKeywords = '',
       dislikedKeywords = '',
-      preferredCategories = ''
+      preferredCategories = '',
+      preferredSources = '',
+      freshness = 'week'
     } = req.query;
 
-    const pageNumber = parseInt(page);
-    const limitNumber = parseInt(limit);
+    // Валидация параметров
+    const pageNumber = Math.max(1, parseInt(page));
+    const limitNumber = 10; // Всегда возвращаем 10 рекомендаций
     const skip = (pageNumber - 1) * limitNumber;
 
-    // 1. Получаем журнал пользователя
-    const userNews = await News.find({ userId })
-      .sort({ publishedAt: -1 })
-      .limit(50)
-      .lean();
-
-    // 2. Анализируем предпочтения
-    const preferences = buildUserPreferences(
-      userNews,
+    // 1. Получаем профиль пользователя
+    const userProfile = await getUserProfile(
+      userId,
       likedKeywords.split(',').filter(Boolean),
       dislikedKeywords.split(',').filter(Boolean),
-      preferredCategories.split(',').filter(Boolean)
+      preferredCategories.split(',').filter(Boolean),
+      preferredSources.split(',').filter(Boolean)
     );
 
-    // 3. Генерируем ключ кэша с учетом пагинации
-    const cacheKey = generateCacheKey(userId, version, preferences, pageNumber, limitNumber);
+    // 2. Генерируем ключ кэша
+    const cacheKey = generateCacheKey(userId, userProfile, pageNumber, limitNumber, freshness);
 
-    // Проверяем кэш
+    // Проверка кэша
     if (recommendationCache.has(cacheKey)) {
       const { timestamp, data } = recommendationCache.get(cacheKey);
       if (Date.now() - timestamp < CACHE_TTL) {
-        return res.status(200).json({
-          recommendations: data.recommendations,
-          totalCount: data.totalCount,
-          currentPage: pageNumber,
-          totalPages: Math.ceil(data.totalCount / limitNumber)
-        });
+        // Гарантируем, что возвращается ровно 10 рекомендаций
+        const exact10 = data.recommendations.slice(0, 10);
+        return formatResponse(res, exact10, data.totalCount, pageNumber, limitNumber);
       }
     }
 
-    // 4. Получаем рекомендации (больше, чем лимит, чтобы учесть фильтрацию)
-    let recommendations = await fetchPersonalizedRecommendations(preferences, limitNumber * 3, version);
-
-    // 5. Фильтруем уже сохраненные новости
-    recommendations = recommendations.filter(recommendation => 
-      !userNews.some(item => item.url === recommendation.url)
+    // 3. Получаем персонализированные рекомендации
+    let recommendations = await fetchPersonalizedRecommendations(
+      userProfile,
+      RECOMMENDATION_POOL_SIZE,
+      freshness
     );
 
-    // 6. Если рекомендаций мало, добавляем fallback
-    if (recommendations.length < limitNumber * 3) {
-      const fallbackCount = limitNumber * 3 - recommendations.length;
-      const fallbackNews = await fetchFallbackRecommendations(fallbackCount, version);
-      recommendations.push(...fallbackNews);
-    }
+    // 4. Фильтрация и ранжирование
+    recommendations = await processRecommendations(recommendations, userProfile, userId);
 
-    // Сохраняем общее количество для пагинации
+    // 5. Пагинация - берем ровно 10 рекомендаций
     const totalCount = recommendations.length;
+    const exact10Recommendations = recommendations.slice(0, 10);
 
-    // Применяем пагинацию
-    const paginatedRecommendations = recommendations.slice(skip, skip + limitNumber);
-
-    // Сохраняем в кэш
+    // 6. Обновление кэша
     recommendationCache.set(cacheKey, {
       timestamp: Date.now(),
       data: {
-        recommendations: paginatedRecommendations,
+        recommendations: exact10Recommendations,
         totalCount
       }
     });
 
-    res.status(200).json({
-      recommendations: paginatedRecommendations,
-      totalCount,
-      currentPage: pageNumber,
-      totalPages: Math.ceil(totalCount / limitNumber)
-    });
+    return formatResponse(res, exact10Recommendations, totalCount, pageNumber, limitNumber);
   } catch (err) {
-    console.error('Ошибка получения рекомендаций:', err);
-    res.status(500).json({ 
-      error: 'Internal Server Error',
-      details: err.message 
-    });
-  }
-};
-
-exports.getRecommendations = async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const {
-      version = 0,
-      limit = 12, // Увеличиваем лимит
-      likedKeywords = '',
-      dislikedKeywords = '',
-      preferredCategories = ''
-    } = req.query;
-
-    // 1. Получаем журнал пользователя
-    const userNews = await News.find({ userId })
-      .sort({ publishedAt: -1 })
-      .limit(50)
-      .lean();
-
-    // 2. Анализируем предпочтения
-    const preferences = buildUserPreferences(
-      userNews,
-      likedKeywords.split(',').filter(Boolean),
-      dislikedKeywords.split(',').filter(Boolean),
-      preferredCategories.split(',').filter(Boolean)
-    );
-
-    // 3. Получаем больше рекомендаций
-    let recommendations = await fetchPersonalizedRecommendations(preferences, limit * 3, version);
-
-    // 4. Фильтруем уже сохраненные новости
-    recommendations = recommendations.filter(recommendation => 
-      !userNews.some(item => item.url === recommendation.url)
-    );
-
-    // 5. Если рекомендаций мало, добавляем fallback
-    if (recommendations.length < limit) {
-      const fallbackCount = limit * 2 - recommendations.length;
-      const fallbackNews = await fetchFallbackRecommendations(fallbackCount, version);
-      recommendations = [...recommendations, ...fallbackNews];
-      
-      // Удаляем дубликаты
-      recommendations = recommendations.filter((item, index, self) =>
-        index === self.findIndex(t => t.url === item.url)
-      );
-    }
-
-    // 6. Возвращаем запрошенное количество новостей
-    const result = recommendations.slice(0, limit);
-
-    res.status(200).json({
-      recommendations: result,
-      totalCount: result.length
-    });
-  } catch (err) {
-    console.error('Ошибка получения рекомендаций:', err);
-    res.status(500).json({ 
-      error: 'Internal Server Error',
-      details: err.message 
-    });
-  }
-};
-
-// Обновляем генерацию ключа кэша
-function generateCacheKey(userId, version, preferences, page, limit) {
-  return `${userId}-${version}-${page}-${limit}-${preferences.keywords.join(',')}-${preferences.categories.join(',')}`;
-}
-
-// Построение профиля предпочтений
-function buildUserPreferences(userNews, explicitLikes = [], explicitDislikes = [], explicitCategories = []) {
-  const keywordWeights = {};
-  const sourceWeights = {};
-  const categoryWeights = {};
-  const sentimentScores = { positive: 0, negative: 0, neutral: 0 };
-  const now = Date.now();
-
-  // Анализ каждой новости с учетом времени
-  userNews.forEach((newsItem, index) => {
-    const timeDecay = 0.9 ** index; // Экспоненциальное затухание
-    const recency = 1 / (1 + Math.log(1 + (now - new Date(newsItem.publishedAt).getTime()) / (1000 * 60 * 60 * 24)));
-    const weight = timeDecay * recency;
-
-    // Обработка ключевых слов
-    const keywords = newsItem.keywords || extractKeywords(newsItem.title, newsItem.description);
-    keywords.forEach(keyword => {
-      if (explicitDislikes.includes(keyword)) return;
-      const boost = explicitLikes.includes(keyword) ? 2 : 1;
-      keywordWeights[keyword] = (keywordWeights[keyword] || 0) + weight * boost;
-    });
-
-    // Обработка категорий
-    const categories = explicitCategories.length > 0 
-      ? explicitCategories 
-      : (newsItem.categories || categorizeContent(newsItem.title, newsItem.description));
+    console.error('Recommendation error:', err);
     
-    categories.forEach(category => {
-      categoryWeights[category] = (categoryWeights[category] || 0) + weight;
-    });
-
-    // Анализ источников
-    if (newsItem.source) {
-      sourceWeights[newsItem.source] = (sourceWeights[newsItem.source] || 0) + weight;
+    // Fallback: возвращаем ровно 10 рекомендаций из кэшированных топовых новостей
+    try {
+      const fallbackNews = await fetchFallbackRecommendations(10, 'week');
+      const exact10Fallback = fallbackNews.slice(0, 10);
+      return formatResponse(res, exact10Fallback, exact10Fallback.length, 1, 10);
+    } catch (fallbackError) {
+      console.error('Fallback also failed:', fallbackError);
+      return handleRecommendationError(res, err);
     }
+  }
+};
 
-    // Анализ тональности
-    const sentiment = analyzeSentiment(newsItem.title);
-    sentimentScores[sentiment] += weight;
-  });
-
-  // Нормализация весов
-  const normalize = weights => {
-    const max = Math.max(...Object.values(weights));
-    return Object.fromEntries(
-      Object.entries(weights).map(([key, val]) => [key, val / max])
-    );
-  };
-
-  return {
-    keywords: getTopItems(keywordWeights, 15, 0.05),
-    categories: getTopItems(categoryWeights, 5),
-    sources: getTopItems(sourceWeights, 3),
-    sentiment: Object.entries(sentimentScores).reduce((a, b) => a[1] > b[1] ? a : b)[0],
-    dislikedKeywords: explicitDislikes
-  };
-}
-
-// Получение топ-N элементов
+// Функция для получения топовых элементов
 function getTopItems(weights, count, threshold = 0.1) {
+  if (!weights || typeof weights !== 'object') {
+    return [];
+  }
+
   return Object.entries(weights)
     .filter(([_, weight]) => weight >= threshold)
     .sort((a, b) => b[1] - a[1])
@@ -475,207 +438,543 @@ function getTopItems(weights, count, threshold = 0.1) {
     .map(([item]) => item);
 }
 
-// Получение персонализированных рекомендаций
-async function fetchPersonalizedRecommendations(preferences, limit, version) {
-  const { keywords, categories, sources, sentiment, dislikedKeywords } = preferences;
-  const queryVariants = [];
-
-  // Вариант 1: Основные ключевые слова + категории
-  if (keywords.length > 0 && categories.length > 0) {
-    queryVariants.push(`(${keywords.slice(0, 3).join(' OR ')}) AND (${categories[0]})`);
+// Функция получения профиля пользователя
+async function getUserProfile(userId, likedKeywords = [], dislikedKeywords = [], preferredCategories = [], preferredSources = []) {
+  const cacheKey = `profile-${userId}-${likedKeywords.join(',')}-${dislikedKeywords.join(',')}`;
+  
+  if (userProfileCache.has(cacheKey)) {
+    return userProfileCache.get(cacheKey);
   }
 
-  // Вариант 2: Ключевые слова + тональность
-  if (keywords.length > 0 && sentiment !== 'neutral') {
-    const sentimentWords = getSentimentWords(sentiment);
-    queryVariants.push(`(${keywords[0]}) AND (${sentimentWords.join(' OR ')})`);
-  }
+  // Получаем историю пользователя
+  const userNews = await News.find({ userId })
+    .sort({ publishedAt: -1 })
+    .limit(MAX_USER_HISTORY)
+    .lean();
 
-  // Вариант 3: По источнику
-  if (sources.length > 0) {
-    queryVariants.push(`source:${sources[0]}`);
-  }
-
-  // Вариант 4: Случайная комбинация
-  const randomCombination = [];
-  if (keywords.length > 0) randomCombination.push(keywords[0]);
-  if (categories.length > 0 && version % 2 === 0) randomCombination.push(categories[0]);
-  if (randomCombination.length > 0) {
-    queryVariants.push(randomCombination.join(' AND '));
-  }
-
-  // Если вариантов нет, используем fallback
-  if (queryVariants.length === 0) {
-    return fetchFallbackRecommendations(limit, version);
-  }
-
-  // Параллельный запрос всех вариантов
-  const requests = queryVariants.map(query => 
-    fetchNewsAPI(query, Math.ceil(limit / queryVariants.length), version)
+  // Анализируем предпочтения
+  const profile = analyzeUserBehavior(
+    userNews,
+    likedKeywords,
+    dislikedKeywords,
+    preferredCategories,
+    preferredSources
   );
 
-  const results = await Promise.all(requests);
-  let recommendations = results.flat();
-
-  // Фильтрация по dislikes
-  if (dislikedKeywords.length > 0) {
-    recommendations = recommendations.filter(item =>
-      !dislikedKeywords.some(keyword =>
-        item.title.toLowerCase().includes(keyword.toLowerCase())
-      )
-    );
-  }
-
-  // Рандомизация с учетом версии
-  return shuffleArray(recommendations, version).slice(0, limit);
+  userProfileCache.set(cacheKey, profile);
+  return profile;
 }
 
-// Запрос к NewsAPI
-async function fetchNewsAPI(query, limit, version) {
-  try {
-    const cacheKey = `newsapi-${query}-${limit}-${version}`;
-    if (recommendationCache.has(cacheKey)) {
-      return recommendationCache.get(cacheKey);
-    }
+// Анализ поведения пользователя (без тональности)
+function analyzeUserBehavior(newsItems, explicitLikes = [], explicitDislikes = [], explicitCategories = [], explicitSources = []) {
+  const keywordWeights = {};
+  const sourceWeights = {};
+  const categoryWeights = {};
+  const authorWeights = {};
+  const now = Date.now();
 
-    const response = await axios.get('https://newsapi.org/v2/everything', {
-      params: {
-        q: query,
-        pageSize: limit,
-        sortBy: version % 2 === 0 ? 'relevancy' : 'publishedAt',
-        language: 'en',
-        apiKey: process.env.NEWS_API_KEY
-      }
+  // Временные коэффициенты
+  const HOUR = 3600000;
+  const DAY = 86400000;
+  const WEEK = 604800000;
+
+  newsItems.forEach((item, index) => {
+    // Временной коэффициент (экспоненциальное затухание + релевантность новизны)
+    const age = now - new Date(item.publishedAt).getTime();
+    const recency = age < HOUR ? 1.5 : 
+                   age < DAY ? 1.2 : 
+                   age < WEEK ? 1.0 : 0.7;
+    const timeDecay = Math.pow(0.95, index);
+    const weight = recency * timeDecay;
+
+    // Извлечение ключевых слов
+    const keywords = extractEnhancedKeywords(item.title, item.description);
+    
+    // Обработка ключевых слов
+    keywords.forEach(keyword => {
+      if (explicitDislikes.includes(keyword)) return;
+      const boost = explicitLikes.includes(keyword) ? 3 : 1;
+      keywordWeights[keyword] = (keywordWeights[keyword] || 0) + weight * boost;
     });
 
-    const result = response.data.articles.map(article => ({
-      title: article.title,
-      description: article.description,
-      url: article.url,
-      imageUrl: article.urlToImage,
-      source: article.source?.name,
-      publishedAt: article.publishedAt,
-      relevance: calculateRelevance(article, query)
-    }));
+    // Обработка категорий
+    const categories = explicitCategories.length > 0 
+      ? explicitCategories 
+      : categorizeContentEnhanced(item.title, item.description);
+    
+    categories.forEach(category => {
+      categoryWeights[category] = (categoryWeights[category] || 0) + weight;
+    });
 
-    recommendationCache.set(cacheKey, result);
-    return result;
+    // Обработка источников
+    if (item.source) {
+      const sourceBoost = explicitSources.includes(item.source) ? 2 : 1;
+      sourceWeights[item.source] = (sourceWeights[item.source] || 0) + weight * sourceBoost;
+    }
+
+    // Обработка авторов (если есть)
+    if (item.author) {
+      authorWeights[item.author] = (authorWeights[item.author] || 0) + weight * 0.8;
+    }
+  });
+
+  // Нормализация и выбор топовых элементов
+  return {
+    keywords: getTopItems(keywordWeights, 10, 0.1),
+    categories: getTopItems(categoryWeights, 5),
+    sources: getTopItems(sourceWeights, 5),
+    authors: getTopItems(authorWeights, 3),
+    dislikedKeywords: explicitDislikes,
+    preferredSources: explicitSources,
+    freshness: calculateFreshnessPreference(newsItems)
+  };
+}
+
+// Извлечение ключевых слов
+function extractEnhancedKeywords(title, description, maxKeywords = 8) {
+  if (!title && !description) return [];
+  
+  const text = `${title || ''} ${description || ''}`.toLowerCase();
+  const tokens = tokenizer.tokenize(text) || [];
+  const stopwords = new Set([...natural.stopwords, 'said', 'say', 'says', 'year', 'new']);
+  
+  // Фильтрация и нормализация
+  const filtered = tokens
+    .filter(token => token.length > 2 && !stopwords.has(token))
+    .filter(token => /^[a-z]+$/.test(token));
+  
+  // Использование TF-IDF и частотности
+  const tfidf = new natural.TfIdf();
+  tfidf.addDocument(filtered.join(' '));
+  
+  const keywordScores = {};
+  const termFrequency = {};
+  
+  filtered.forEach(token => {
+    termFrequency[token] = (termFrequency[token] || 0) + 1;
+  });
+  
+  tfidf.listTerms(0).forEach(item => {
+    const tfidfScore = item.tfidf;
+    const freqScore = termFrequency[item.term] / filtered.length;
+    keywordScores[item.term] = 0.6 * tfidfScore + 0.4 * freqScore;
+  });
+  
+  // Добавляем именованные сущности
+  const entities = extractNamedEntities(text);
+  entities.forEach(entity => {
+    keywordScores[entity] = (keywordScores[entity] || 0) + 0.5;
+  });
+  
+  return Object.keys(keywordScores)
+    .sort((a, b) => keywordScores[b] - keywordScores[a])
+    .slice(0, maxKeywords);
+}
+
+// Извлечение именованных сущностей
+function extractNamedEntities(text) {
+  const entities = [];
+  const words = text.split(/\s+/);
+  
+  // Простая эвристика для имен собственных
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    if (word.length > 3 && word[0] === word[0].toUpperCase() && !word.includes("'")) {
+      // Проверяем следующее слово для составных имен
+      if (i < words.length - 1 && words[i+1][0] === words[i+1][0].toUpperCase()) {
+        entities.push(`${word} ${words[i+1]}`);
+        i++;
+      } else {
+        entities.push(word);
+      }
+    }
+  }
+  
+  return entities;
+}
+
+// Категоризация контента
+function categorizeContentEnhanced(title, description) {
+  const text = `${title || ''} ${description || ''}`.toLowerCase();
+  const categories = [];
+  
+  const categoryPatterns = {
+    technology: /(tech|ai|robot|computer|software|digital|vr|ar|blockchain|bitcoin|crypto|algorithm|app|device)/,
+    business: /(business|market|economy|stock|finance|invest|bank|trade|commerce|startup|venture)/,
+    science: /(science|research|space|medicine|discovery|scientist|physics|biology|chemistry|climate)/,
+    politics: /(politics|government|election|minister|president|congress|senate|vote|law|policy)/,
+    sports: /(sport|football|basketball|olympic|tournament|championship|game|match|player|coach)/,
+    entertainment: /(movie|film|actor|actress|celebrity|music|song|album|award|oscar|festival)/,
+    health: /(health|disease|hospital|doctor|patient|medical|vaccine|pandemic|treatment|therapy)/
+  };
+  
+  for (const [category, pattern] of Object.entries(categoryPatterns)) {
+    if (pattern.test(text)) {
+      categories.push(category);
+    }
+  }
+  
+  return categories.length > 0 ? categories : ['general'];
+}
+
+// Получение персонализированных рекомендаций
+async function fetchPersonalizedRecommendations(profile, limit, freshness = 'week') {
+  try {
+    const baseParams = {
+      max: limit,
+      lang: 'en',
+      country: 'us',
+      from: getFreshnessDate(freshness)
+    };
+
+    const queryVariants = buildQueryVariants(profile);
+    const requests = queryVariants.map(query => 
+      fetchWithRetry('https://gnews.io/api/v4/search', {
+        ...baseParams,
+        q: query
+      }).catch(() => null)
+    );
+
+    const responses = await Promise.all(requests);
+    let articles = responses.flatMap(response => 
+      response?.articles?.map(processGNewsArticle) || []
+    );
+
+    if (articles.length < limit * 0.5) {
+      const fallback = await fetchFallbackRecommendations(limit, freshness);
+      articles.push(...fallback);
+    }
+
+    return removeDuplicates(articles).slice(0, limit * 2);
   } catch (error) {
-    console.error(`NewsAPI error for query "${query}":`, error.message);
-    return [];
+    console.error('Error fetching personalized recommendations:', error);
+    return fetchFallbackRecommendations(limit, freshness);
+  }
+}
+
+async function fetchWithRetry(url, params, retries = 3, delay = 1000) {
+  try {
+    return await fetchCachedGNews(url, params);
+  } catch (error) {
+    if (retries > 0 && error.response?.status === 429) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return fetchWithRetry(url, params, retries - 1, delay * 2);
+    }
+    throw error;
+  }
+}
+
+// Построение вариантов запросов
+function buildQueryVariants(profile) {
+  const variants = [];
+  const { keywords, categories, sources } = profile;
+  
+  // Вариант 1: Основные ключевые слова + категория
+  if (keywords.length > 0 && categories.length > 0) {
+    variants.push(`(${keywords.slice(0, 3).join(' OR ')}) AND (${categories[0]})`);
+  }
+  
+  // Вариант 3: По источнику
+  if (sources.length > 0) {
+    variants.push(`source:${sources[0]}`);
+  }
+  
+  // Вариант 4: Случайная комбинация
+  if (keywords.length > 1 && categories.length > 1) {
+    variants.push(`(${keywords[1]}) AND (${categories[1]})`);
+  }
+  
+  // Вариант 5: Только ключевые слова
+  if (keywords.length > 0) {
+    variants.push(keywords.slice(0, 2).join(' AND '));
+  }
+  
+  // Fallback варианты
+  if (variants.length === 0) {
+    variants.push('news', 'world', 'technology');
+  }
+  
+  return variants;
+}
+
+// Обработка статей из GNews API
+function processGNewsArticle(article) {
+  return {
+    title: article.title,
+    description: article.description,
+    content: article.content,
+    url: article.url,
+    imageUrl: article.image,
+    source: article.source?.name || 'Unknown',
+    publishedAt: article.publishedAt,
+    categories: article.categories || [],
+    authors: article.authors || [],
+    _keywords: extractEnhancedKeywords(article.title, article.description)
+  };
+}
+
+const cron = require('node-cron');
+
+// Обновление кэша каждые 30 минут
+cron.schedule('*/30 * * * *', async () => {
+  try {
+    const response = await axios.get('https://gnews.io/api/v4/top-headlines', {
+      params: {
+        max: 20,
+        lang: 'en',
+        token: process.env.GNEWS_API_KEY
+      }
+    });
+    
+    // Сохраняем в кэш
+    newsCache.set('preloaded-news', response.data.articles, 1800); // 30 минут
+  } catch (error) {
+    console.error('Failed to refresh news cache:', error.message);
+  }
+});
+
+const NodeCache = require('node-cache');
+const newsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 }); // Кэш на 5 минут
+
+async function fetchCachedGNews(url, params) {
+  const cacheKey = `${url}-${JSON.stringify(params)}`;
+  const cached = newsCache.get(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const response = await axios.get(url, { 
+      params: { ...params, token: process.env.GNEWS_API_KEY },
+      timeout: 10000
+    });
+    newsCache.set(cacheKey, response.data);
+    return response.data;
+  } catch (error) {
+    if (error.response?.status === 429) {
+      // Кэшируем пустой результат на 1 минуту при ошибке 429
+      newsCache.set(cacheKey, { articles: [] }, 60);
+    }
+    throw error;
   }
 }
 
 // Fallback-рекомендации
-async function fetchFallbackRecommendations(limit, version) {
-  try {
-    const response = await axios.get('https://newsapi.org/v2/top-headlines', {
-      params: {
-        country: 'us',
-        pageSize: limit,
-        apiKey: process.env.NEWS_API_KEY
-      }
-    });
+async function fetchFallbackRecommendations(limit, freshness) {
+  // Сначала проверяем кэш
+  const cacheKey = `fallback-${freshness}-${limit}`;
+  const cached = newsCache.get(cacheKey);
+  if (cached) return cached.slice(0, 10);
 
-    return shuffleArray(response.data.articles, version).map(article => ({
-      title: article.title,
-      description: article.description,
-      url: article.url,
-      imageUrl: article.urlToImage,
-      source: article.source?.name,
-      publishedAt: article.publishedAt,
-      relevance: 0.5 // Базовый уровень релевантности для fallback
-    }));
-  } catch (error) {
-    console.error('Fallback recommendations error:', error.message);
-    return [];
+  // Локальный резервный набор новостей
+  const localFallbackNews = [
+    {
+      title: "Latest Technology Trends",
+      description: "Stay updated with the newest technology trends",
+      url: "https://example.com/tech-trends",
+      image: "https://example.com/tech.jpg",
+      publishedAt: new Date().toISOString(),
+      source: { name: "TechNews" }
+    },
+    // Добавьте другие резервные новости по необходимости
+  ];
+
+  for (const strategy of FALLBACK_STRATEGIES) {
+    try {
+      const params = {
+        max: limit,
+        lang: 'en',
+        from: getFreshnessDate(freshness),
+        token: process.env.GNEWS_API_KEY
+      };
+
+      if (strategy === 'headlines') params.country = 'us';
+      if (strategy === 'trending') params.topic = 'general';
+      if (strategy === 'popular') params.sortby = 'popular';
+
+      const data = await fetchCachedGNews('https://gnews.io/api/v4/top-headlines', params);
+      if (data?.articles?.length > 0) {
+        const result = data.articles.map(processGNewsArticle).slice(0, limit);
+        newsCache.set(cacheKey, result, 60); // Кэшируем на 1 минуту
+        return result;
+      }
+    } catch (error) {
+      console.error(`Fallback strategy ${strategy} failed:`, error.message);
+      // При ошибке 429 делаем паузу перед следующей попыткой
+      if (error.response?.status === 429) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
   }
+
+  // Если все стратегии не сработали, возвращаем локальный резерв
+  newsCache.set(cacheKey, localFallbackNews, 60);
+  return localFallbackNews.slice(0, 10);
+}
+
+// Обработка и ранжирование рекомендаций
+async function processRecommendations(articles, profile, userId) {
+  // 1. Фильтрация уже просмотренных новостей
+  const viewedUrls = await News.find({ userId }).distinct('url');
+  articles = articles.filter(article => !viewedUrls.includes(article.url));
+  
+  // 2. Фильтрация по нелюбимым ключевым словам
+  if (profile.dislikedKeywords.length > 0) {
+    articles = articles.filter(article => 
+      !profile.dislikedKeywords.some(keyword =>
+        article.title.toLowerCase().includes(keyword.toLowerCase()) ||
+        article.description?.toLowerCase().includes(keyword.toLowerCase())
+      )
+    );
+  }
+  
+  // 3. Расчет релевантности для каждой статьи
+  articles.forEach(article => {
+    article.relevanceScore = calculateArticleRelevance(article, profile);
+  });
+  
+  // 4. Сортировка по релевантности
+  articles.sort((a, b) => b.relevanceScore - a.relevanceScore);
+  
+  // 5. Добавление разнообразия
+  return diversifyRecommendations(articles);
+}
+
+// Расчет релевантности статьи (без учета тональности)
+function calculateArticleRelevance(article, profile) {
+  let score = 0;
+  
+  // Совпадение ключевых слов
+  if (article._keywords && profile.keywords) {
+    const matchedKeywords = article._keywords.filter(kw => 
+      profile.keywords.includes(kw)
+    ).length;
+    score += matchedKeywords * 0.3; // Увеличили вес ключевых слов
+  }
+  
+  // Совпадение категорий
+  if (article.categories && profile.categories) {
+    const matchedCategories = article.categories.filter(cat => 
+      profile.categories.includes(cat)
+    ).length;
+    score += matchedCategories * 0.4; // Увеличили вес категорий
+  }
+  
+  // Совпадение источников
+  if (article.source && profile.sources.includes(article.source)) {
+    score += 0.3; // Увеличили вес источников
+  }
+  
+  // Новизна статьи
+  const articleAge = Date.now() - new Date(article.publishedAt).getTime();
+  const freshnessScore = 1 - Math.min(1, articleAge / (7 * 24 * 3600 * 1000));
+  score += freshnessScore * 0.2;
+  
+  // Наличие изображения
+  if (article.imageUrl) {
+    score += 0.1;
+  }
+  
+  // Длина контента
+  const contentLength = (article.content || '').length;
+  if (contentLength > 1000) score += 0.1;
+  else if (contentLength > 500) score += 0.05;
+  
+  return Math.min(1, score);
+}
+
+// Добавление разнообразия в рекомендации
+function diversifyRecommendations(articles, maxSameSource = 2) {
+  const sourceCounts = {};
+  const diversified = [];
+  
+  for (const article of articles) {
+    const source = article.source || 'unknown';
+    sourceCounts[source] = (sourceCounts[source] || 0) + 1;
+    
+    if (sourceCounts[source] <= maxSameSource) {
+      diversified.push(article);
+    }
+    
+    if (diversified.length >= articles.length * 0.8) {
+      break;
+    }
+  }
+  
+  // Добавляем оставшиеся без учета лимита по источникам
+  const remaining = articles.filter(a => !diversified.includes(a));
+  return [...diversified, ...remaining];
 }
 
 // Вспомогательные функции
 
-function extractKeywords(title, description) {
-  const text = `${title} ${description}`.toLowerCase();
-  const tokens = tokenizer.tokenize(text) || [];
-  const stopwords = new Set(natural.stopwords);
-  
-  const keywords = tokens
-    .filter(token => token.length > 3 && !stopwords.has(token))
-    .filter(token => /^[a-z]+$/.test(token)); // Только слова из букв
-
-  const tfidf = new natural.TfIdf();
-  tfidf.addDocument(text);
-  
-  const keywordScores = {};
-  tfidf.listTerms(0).forEach(item => {
-    if (keywords.includes(item.term)) {
-      keywordScores[item.term] = item.tfidf;
-    }
-  });
-
-  return Object.keys(keywordScores)
-    .sort((a, b) => keywordScores[b] - keywordScores[a])
-    .slice(0, 5);
-}
-
-function categorizeContent(title, description) {
-  const text = `${title} ${description}`.toLowerCase();
-  const categories = [];
-
-  if (/(tech|ai|robot|computer|software)/.test(text)) categories.push('technology');
-  if (/(business|market|economy|stock)/.test(text)) categories.push('business');
-  if (/(science|research|space|medicine)/.test(text)) categories.push('science');
-  if (/(politics|government|election)/.test(text)) categories.push('politics');
-  if (/(sport|football|basketball)/.test(text)) categories.push('sports');
-
-  return categories.length > 0 ? categories : ['general'];
-}
-
-const analyzer = new SentimentAnalyzer('English', natural.PorterStemmer, 'afinn');
-
-
-function analyzeSentiment(text) {
-  const score = analyzer.getSentiment(tokenizer.tokenize(text) || []);
-  if (score > 0.2) return 'positive';
-  if (score < -0.2) return 'negative';
-  return 'neutral';
-}
-
-function getSentimentWords(sentiment) {
-  return sentiment === 'positive'
-    ? ['success', 'win', 'growth', 'happy', 'achievement']
-    : ['crisis', 'war', 'conflict', 'problem', 'failure'];
-}
-
-function calculateRelevance(article, query) {
-  const text = `${article.title} ${article.description}`.toLowerCase();
-  const queryTerms = query.toLowerCase().split(/\W+/);
-  let score = 0;
-
-  queryTerms.forEach(term => {
-    if (text.includes(term)) {
-      score += 1 / (1 + text.indexOf(term) / 100); // Более ранние вхождения важнее
-    }
-  });
-
-  // Бонусы
-  if (article.urlToImage) score += 0.3;
-  if (new Date() - new Date(article.publishedAt) < 86400000) score += 0.2; // Новые статьи
-
-  return Math.min(1, score);
-}
-
-function shuffleArray(array, seed) {
-  // Детерминированный shuffle на основе seed
-  const random = () => {
-    const x = Math.sin(seed++) * 10000;
-    return x - Math.floor(x);
-  };
-
-  const result = [...array];
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
+function getFreshnessDate(freshness) {
+  const now = new Date();
+  switch (freshness) {
+    case 'day': return new Date(now.setDate(now.getDate() - 1)).toISOString();
+    case 'week': return new Date(now.setDate(now.getDate() - 7)).toISOString();
+    case 'month': return new Date(now.setMonth(now.getMonth() - 1)).toISOString();
+    default: return new Date(now.setDate(now.getDate() - 3)).toISOString();
   }
-  return result;
+}
+
+function determineSortingStrategy(profile) {
+  if (profile.freshness === 'recent') return 'publishedAt';
+  return 'popular'; // По умолчанию сортируем по популярности
+}
+
+function calculateFreshnessPreference(newsItems) {
+  if (newsItems.length === 0) return 'recent';
+  
+  const now = Date.now();
+  const avgAge = newsItems.reduce((sum, item) => {
+    return sum + (now - new Date(item.publishedAt).getTime());
+  }, 0) / newsItems.length;
+  
+  const DAY = 86400000;
+  if (avgAge < DAY * 1.5) return 'recent';
+  if (avgAge < DAY * 5) return 'balanced';
+  return 'any';
+}
+
+function removeDuplicates(articles) {
+  const uniqueUrls = new Set();
+  return articles.filter(article => {
+    if (uniqueUrls.has(article.url)) return false;
+    uniqueUrls.add(article.url);
+    return true;
+  });
+}
+
+function generateCacheKey(userId, profile, page, limit, freshness) {
+  const { keywords, categories, sources } = profile;
+  return `${userId}-${page}-${limit}-${freshness}-${
+    keywords.slice(0, 3).join(',')
+  }-${categories.join(',')}-${sources.join(',')}`;
+}
+
+function formatResponse(res, recommendations, totalCount, page, limit) {
+const exact10 = recommendations.slice(0, 10);
+  return res.status(200).json({
+    recommendations: exact10,
+    pagination: {
+      currentPage: page,
+      totalPages: Math.ceil(totalCount / limit),
+      totalCount,
+      limit: 10 // Всегда указываем лимит 10
+    }
+  });
+}
+
+function handleRecommendationError(res, error) {
+  if (error.response?.status === 429) {
+    return res.status(429).json({
+      error: 'Too Many Requests',
+      message: 'API rate limit exceeded. Please try again later.'
+    });
+  }
+  
+  return res.status(500).json({
+    error: 'Internal Server Error',
+    message: 'Failed to generate recommendations',
+    details: process.env.NODE_ENV === 'development' ? error.message : undefined
+  });
 }

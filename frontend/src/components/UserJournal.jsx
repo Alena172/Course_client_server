@@ -17,12 +17,8 @@ const UserJournal = () => {
         if (!userId) {
           throw new Error('Требуется авторизация');
         }
-
         const response = await API.get(`api/news/${userId}/journal`);
-        
-        // Добавляем проверку на массив
         const receivedData = Array.isArray(response.data) ? response.data : [];
-        
         setEntries(receivedData.map(entry => ({
           ...entry,
           title: entry.title || 'Без названия',
@@ -38,13 +34,11 @@ const UserJournal = () => {
         setLoading(false);
       }
     };
-
     fetchJournal();
   }, []);
   
   const handleRemove = async (entryId) => {
     if (!window.confirm('Удалить эту новость из журнала?')) return;
-  
     try {
       setLoading(true);
       const response = await API.delete(`api/news/journal/${entryId}`);
