@@ -32,7 +32,7 @@ function clearUserProfileCache(userId) {
 
 
 exports.proxySearchNews = async (req, res) => {
-  const { q, lang = 'ru', after } = req.query;
+  const { q, lang = 'ru', after, pageSize = 10 } = req.query;
 
   if (!process.env.GNEWS_API_KEY) {
     return res.status(500).json({ error: 'API-ключ для GNews не задан' });
@@ -43,40 +43,49 @@ exports.proxySearchNews = async (req, res) => {
   }
 
   try {
-    const response = await axios.get('https://gnews.io/api/v4/search ', {
-      params: {
-        q,
-        lang,
-        token: process.env.GNEWS_API_KEY,
-      },
+    const params = {
+      q,
+      lang,
+      token: process.env.GNEWS_API_KEY,
+      max: Math.min(pageSize, 20), // Ограничиваем максимальный размер страницы
+    };
+
+    // Добавляем параметр сортировки по дате
+    params.sortby = 'publishedAt';
+
+    const response = await axios.get('https://gnews.io/api/v4/search', {
+      params,
       timeout: 10000
     });
 
-    const newArticles = response.data.articles || [];
+    let articles = response.data.articles || [];
+    
+    // Сортировка по дате (на случай, если API не отсортировало)
+    articles.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
 
-    // Сортировка по дате, чтобы гарантировать порядок
-    const sortedArticles = newArticles.sort((a, b) =>
-      new Date(b.publishedAt) - new Date(a.publishedAt)
-    );
-
-    // Возвращаем только те статьи, которые меньше `after`
-    const filteredArticles = after
-      ? sortedArticles.filter(article => new Date(article.publishedAt) < new Date(after))
-      : sortedArticles;
-
-    // Если есть статьи — отправляем их
-    if (filteredArticles.length > 0) {
-      const lastPublishedAt = filteredArticles[filteredArticles.length - 1].publishedAt;
-      res.json({
-        articles: filteredArticles,
-        lastPublishedAt
-      });
-    } else {
-      res.json({
-        articles: [],
-        message: 'Больше статей нет'
-      });
+    // Фильтрация по дате для пагинации
+    if (after) {
+      articles = articles.filter(article => new Date(article.publishedAt) < new Date(after));
     }
+
+    // Ограничиваем количество возвращаемых статей
+    articles = articles.slice(0, pageSize);
+
+    // Форматируем ответ
+    const result = {
+      articles: articles.map(article => ({
+        title: article.title,
+        description: article.description,
+        content: article.content,
+        url: article.url,
+        image: article.image,
+        source: article.source?.name,
+        publishedAt: article.publishedAt,
+      })),
+      totalResults: response.data.totalArticles || 0,
+    };
+
+    res.json(result);
   } catch (error) {
     console.error('Ошибка при обращении к GNews:', {
       message: error.message,
@@ -89,10 +98,16 @@ exports.proxySearchNews = async (req, res) => {
     }
 
     if (error.response?.status === 429) {
-      return res.status(503).json({ error: 'Превышен лимит запросов к GNews API' });
+      return res.status(503).json({ 
+        error: 'Превышен лимит запросов к GNews API',
+        details: 'Бесплатная версия API ограничена 100 запросами в день'
+      });
     }
 
-    res.status(500).json({ error: 'Ошибка при обращении к GNews API' });
+    res.status(500).json({ 
+      error: 'Ошибка при обращении к GNews API',
+      details: error.message
+    });
   }
 };
 
@@ -356,7 +371,8 @@ exports.getRecommendations = async (req, res) => {
       dislikedKeywords = '',
       preferredCategories = '',
       preferredSources = '',
-      freshness = 'week'
+      freshness = 'week',
+      seed
     } = req.query;
 
     // Валидация параметров
@@ -374,7 +390,7 @@ exports.getRecommendations = async (req, res) => {
     );
 
     // 2. Генерируем ключ кэша
-    const cacheKey = generateCacheKey(userId, userProfile, pageNumber, limitNumber, freshness);
+    const cacheKey = generateCacheKey(userId, userProfile, pageNumber, limitNumber, freshness, seed);
 
     // Проверка кэша
     if (recommendationCache.has(cacheKey)) {
@@ -944,9 +960,9 @@ function removeDuplicates(articles) {
   });
 }
 
-function generateCacheKey(userId, profile, page, limit, freshness) {
-  const { keywords, categories, sources } = profile;
-  return `${userId}-${page}-${limit}-${freshness}-${
+function generateCacheKey(userId, userProfile, pageNumber, limitNumber, freshness, seed) {
+  const { keywords, categories, sources } = userProfile;
+  return `${userId}-${pageNumber}-${limitNumber}-${freshness}-${seed}-${
     keywords.slice(0, 3).join(',')
   }-${categories.join(',')}-${sources.join(',')}`;
 }
