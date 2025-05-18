@@ -369,85 +369,85 @@ exports.getAllNews = async (req, res) => {
 
 
 
-// exports.proxySearchNews = async (req, res) => {
-//   const { q, lang = 'ru', after, pageSize = 10 } = req.query;
+exports.proxySearchNews = async (req, res) => {
+  const { q, lang = 'ru', after, pageSize = 10 } = req.query;
 
-//   if (!process.env.GNEWS_API_KEY) {
-//     return res.status(500).json({ error: 'API-ключ для GNews не задан' });
-//   }
+  if (!process.env.GNEWS_API_KEY) {
+    return res.status(500).json({ error: 'API-ключ для GNews не задан' });
+  }
 
-//   if (!q || q.trim().length < 3) {
-//     return res.status(400).json({ error: 'Поисковый запрос должен содержать минимум 3 символа' });
-//   }
+  if (!q || q.trim().length < 3) {
+    return res.status(400).json({ error: 'Поисковый запрос должен содержать минимум 3 символа' });
+  }
 
-//   try {
-//     const params = {
-//       q,
-//       lang,
-//       token: process.env.GNEWS_API_KEY,
-//       max: Math.min(pageSize, 20), // Ограничиваем максимальный размер страницы
-//     };
+  try {
+    const params = {
+      q,
+      lang,
+      token: process.env.GNEWS_API_KEY,
+      max: Math.min(pageSize, 20), // Ограничиваем максимальный размер страницы
+    };
 
-//     // Добавляем параметр сортировки по дате
-//     params.sortby = 'publishedAt';
+    // Добавляем параметр сортировки по дате
+    params.sortby = 'publishedAt';
 
-//     const response = await axios.get('https://gnews.io/api/v4/search', {
-//       params,
-//       timeout: 10000
-//     });
+    const response = await axios.get('https://gnews.io/api/v4/search', {
+      params,
+      timeout: 10000
+    });
 
-//     let articles = response.data.articles || [];
+    let articles = response.data.articles || [];
     
-//     // Сортировка по дате (на случай, если API не отсортировало)
-//     articles.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+    // Сортировка по дате (на случай, если API не отсортировало)
+    articles.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
 
-//     // Фильтрация по дате для пагинации
-//     if (after) {
-//       articles = articles.filter(article => new Date(article.publishedAt) < new Date(after));
-//     }
+    // Фильтрация по дате для пагинации
+    if (after) {
+      articles = articles.filter(article => new Date(article.publishedAt) < new Date(after));
+    }
 
-//     // Ограничиваем количество возвращаемых статей
-//     articles = articles.slice(0, pageSize);
+    // Ограничиваем количество возвращаемых статей
+    articles = articles.slice(0, pageSize);
 
-//     // Форматируем ответ
-//     const result = {
-//       articles: articles.map(article => ({
-//         title: article.title,
-//         description: article.description,
-//         content: article.content,
-//         url: article.url,
-//         image: article.image,
-//         source: article.source?.name,
-//         publishedAt: article.publishedAt,
-//       })),
-//       totalResults: response.data.totalArticles || 0,
-//     };
+    // Форматируем ответ
+    const result = {
+      articles: articles.map(article => ({
+        title: article.title,
+        description: article.description,
+        content: article.content,
+        url: article.url,
+        image: article.image,
+        source: article.source?.name,
+        publishedAt: article.publishedAt,
+      })),
+      totalResults: response.data.totalArticles || 0,
+    };
 
-//     res.json(result);
-//   } catch (error) {
-//     console.error('Ошибка при обращении к GNews:', {
-//       message: error.message,
-//       status: error.response?.status,
-//       data: error.response?.data
-//     });
+    res.json(result);
+  } catch (error) {
+    console.error('Ошибка при обращении к GNews:', {
+      message: error.message,
+      status: error.response?.status,
+      data: error.response?.data
+    });
 
-//     if (error.code === 'ECONNABORTED') {
-//       return res.status(504).json({ error: 'Превышено время ожидания ответа от GNews' });
-//     }
+    if (error.code === 'ECONNABORTED') {
+      return res.status(504).json({ error: 'Превышено время ожидания ответа от GNews' });
+    }
 
-//     if (error.response?.status === 429) {
-//       return res.status(503).json({ 
-//         error: 'Превышен лимит запросов к GNews API',
-//         details: 'Бесплатная версия API ограничена 100 запросами в день'
-//       });
-//     }
+    if (error.response?.status === 429) {
+      return res.status(503).json({ 
+        error: 'Превышен лимит запросов к GNews API',
+        details: 'Бесплатная версия API ограничена 100 запросами в день'
+      });
+    }
 
-//     res.status(500).json({ 
-//       error: 'Ошибка при обращении к GNews API',
-//       details: error.message
-//     });
-//   }
-// };
+    res.status(500).json({ 
+      error: 'Ошибка при обращении к GNews API',
+      details: error.message
+    });
+  }
+};
 
 
 
