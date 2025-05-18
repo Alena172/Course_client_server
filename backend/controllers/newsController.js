@@ -148,9 +148,6 @@ exports.getAllNews = async (req, res) => {
   }
 };
 
-
-
-
 exports.searchNewsByQuery = async (req, res) => {
   const {
     q,
@@ -176,7 +173,7 @@ exports.searchNewsByQuery = async (req, res) => {
       'api-key': process.env.GUARDIAN_API_KEY,
       'page-size': parseInt(maxPerPage),
       'page': parseInt(page),
-      'q': q // строка в формате "ai OR climate"
+      'q': q
     };
 
     if (category) params.section = category;
@@ -185,9 +182,7 @@ exports.searchNewsByQuery = async (req, res) => {
 
     console.log('Параметры для Guardian Search API:', params);
 
-    const response = await axios.get('https://content.guardianapis.com/search ', {
-      params
-    });
+    const response = await axios.get('https://content.guardianapis.com/search ', { params });
 
     const articles = response.data.response.results;
 
@@ -198,19 +193,31 @@ exports.searchNewsByQuery = async (req, res) => {
     for (const article of articles) {
       const pageInstance = await browser.newPage();
       let imageUrl = null;
+      let fullText = '';
 
       try {
         await pageInstance.goto(article.webUrl, { waitUntil: 'domcontentloaded' });
 
+        // Получаем изображение
         imageUrl = await pageInstance.evaluate(() => {
           const img = document.querySelector('img') || document.querySelector('.article-body img');
           return img ? img.src : null;
         });
+
+        // Получаем текст статьи
+        fullText = await pageInstance.evaluate(() => {
+          const body = document.body;
+          return body ? body.innerText.slice(0, 2000) : '';
+        });
+
       } catch (err) {
         console.error(`Ошибка парсинга ${article.webUrl}:`, err.message);
       } finally {
         await pageInstance.close();
       }
+
+      // Извлекаем теги из заголовка + текста
+      const keywords = extractKeywords(article.webTitle + ' ' + fullText);
 
       formattedArticles.push({
         title: article.webTitle,
@@ -219,7 +226,8 @@ exports.searchNewsByQuery = async (req, res) => {
         imageUrl,
         source: article.sectionId || 'unknown',
         publishedAt: article.webPublicationDate,
-        categories: [article.sectionId || 'other']
+        categories: [article.sectionId || 'other'],
+        tags: keywords
       });
     }
 
