@@ -2,6 +2,11 @@ const News = require('../models/News');
 const User = require('../models/User'); // Модель User
 const axios = require('axios'); 
 const mongoose = require('mongoose');
+const puppeteer = require('puppeteer-core'); // Поддержка без headless Chromium
+const natural = require('natural');
+const tokenizer = new natural.WordTokenizer();
+const stopword = require('stopword');
+const chromium = require('chrome-aws-lambda');
  
 exports.deleteNews = async (req, res) => {
   const { id } = req.params;
@@ -14,11 +19,44 @@ exports.deleteNews = async (req, res) => {
   }
 };
 
-const puppeteer = require('puppeteer');
-// const puppeteer = require('puppeteer-core');
-const natural = require('natural');
-const tokenizer = new natural.WordTokenizer();
-const stopword = require('stopword'); // имя переменной лучше не менять
+
+async function parseArticleContent(url) {
+  const options = {
+    args: chromium.args,
+    executablePath: await chromium.executablePath,
+    headless: true
+  };
+
+  const browser = await puppeteer.launch(options);
+  const page = await browser.newPage();
+
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+    // Получаем главное изображение
+    const imageUrl = await page.evaluate(() => {
+      const img = document.querySelector('img') || document.querySelector('.article-body img');
+      return img ? img.src : null;
+    });
+
+    // Получаем текст статьи
+    const fullText = await page.evaluate(() => {
+      const articleBody = document.querySelector('.article-body__content') ||
+                          document.querySelector('.article__container') ||
+                          document.body;
+
+      return articleBody ? articleBody.innerText.trim() : '';
+    });
+
+    await browser.close();
+    return { imageUrl, fullText };
+  } catch (err) {
+    console.error(`Ошибка парсинга ${url}:`, err.message);
+    await browser.close();
+    return { imageUrl: null, fullText: '' };
+  }
+}
+
 
 /**
  * Извлекает ключевые слова из текста статьи
@@ -74,70 +112,33 @@ exports.getAllNews = async (req, res) => {
 
     const response = await axios.get('https://content.guardianapis.com/search ', { params });
 
-    const articles = response.data.response.results;
-
-    // Парсим изображения
-    const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
+    const articles = response.data.response.results || [];
 
     const formattedArticles = [];
 
     for (const article of articles) {
-      const pageInstance = await browser.newPage();
-      let imageUrl = null;
-      let fullText = '';
+      const { imageUrl, fullText } = await parseArticleContent(article.webUrl);
 
-      try {
-        await pageInstance.goto(article.webUrl, { waitUntil: 'domcontentloaded' });
-
-        // Получаем главное изображение
-        imageUrl = await pageInstance.evaluate(() => {
-          const img = document.querySelector('img') || document.querySelector('.article-body img');
-          return img ? img.src : null;
-        });
-
-        // Парсим ТОЛЬКО текст статьи — убираем мусор
-        fullText = await pageInstance.evaluate(() => {
-          const articleBody = document.querySelector('.article-body__content') ||
-                              document.querySelector('.article__container') ||
-                              document.querySelector('article') ||
-                              document.body;
-
-          return articleBody ? articleBody.innerText.trim() : '';
-        });
-
-      } catch (err) {
-        console.error(`Ошибка парсинга ${article.webUrl}:`, err.message);
-      } finally {
-        await pageInstance.close();
-      }
-
-      // Обрезаем до 200 символов
+      // Описание статьи — обрезано до 200 символов
       const shortDescription = fullText
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 200);
 
-      // Извлекаем теги
-      const keywords = extractKeywords(article.webTitle + ' ' + fullText);
+      // Извлечение тегов
+      const keywords = extractKeywords((article.webTitle || '') + ' ' + (fullText || ''));
 
       formattedArticles.push({
-        title: article.webTitle,
-        description: shortDescription || '', // теперь это только текст статьи
-        url: article.webUrl,
+        title: article.webTitle || '',
+        description: shortDescription || '',
+        url: article.webUrl || '',
         imageUrl,
         source: article.sectionId || 'unknown',
-        publishedAt: article.webPublicationDate,
+        publishedAt: article.webPublicationDate || '',
         categories: [article.sectionId || 'other'],
         tags: keywords
       });
     }
-
-    await browser.close();
-
-    // Отправляем ответ
     res.json({
       status: 'ok',
       totalResults: response.data.response.total,
@@ -152,107 +153,219 @@ exports.getAllNews = async (req, res) => {
   }
 };
 
-exports.searchNewsByQuery = async (req, res) => {
-  const {
-    q,
-    category,
-    from,
-    to,
-    page = 1,
-    maxPerPage = 9
-  } = req.query;
 
-  console.log('Параметры для поиска:', { q, category, from, to, page, maxPerPage });
 
-  if (!process.env.GUARDIAN_API_KEY) {
-    return res.status(500).json({ error: 'GUARDIAN_API_KEY не настроен' });
-  }
 
-  if (!q || typeof q !== 'string') {
-    return res.status(400).json({ error: 'Необходим параметр q для поиска' });
-  }
 
-  try {
-    const params = {
-      'api-key': process.env.GUARDIAN_API_KEY,
-      'page-size': parseInt(maxPerPage),
-      'page': parseInt(page),
-      'q': q
-    };
+// exports.getAllNews = async (req, res) => {
+//   const {
+//     category,
+//     from,
+//     to,
+//     page = 1,
+//     maxPerPage = 9
+//   } = req.query;
 
-    if (category) params.section = category;
-    if (from) params['from-date'] = from;
-    if (to) params['to-date'] = to;
+//   console.log('Полученные параметры:', { category, from, to, page, maxPerPage });
 
-    console.log('Параметры для Guardian Search API:', params);
+//   if (!process.env.GUARDIAN_API_KEY) {
+//     return res.status(500).json({ error: 'GUARDIAN_API_KEY не настроен' });
+//   }
 
-    const response = await axios.get('https://content.guardianapis.com/search ', { params });
+//   try {
+//     const params = {
+//       'api-key': process.env.GUARDIAN_API_KEY,
+//       'page-size': parseInt(maxPerPage),
+//       'page': parseInt(page)
+//     };
 
-    const articles = response.data.response.results;
+//     if (category) params.section = category;
+//     if (from) params['from-date'] = from;
+//     if (to) params['to-date'] = to;
 
-        const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
+//     console.log('Параметры для запроса к The Guardian:', params);
 
-    const formattedArticles = [];
+//     const response = await axios.get('https://content.guardianapis.com/search ', { params });
 
-    for (const article of articles) {
-      const pageInstance = await browser.newPage();
-      let imageUrl = null;
-      let fullText = '';
+//     const articles = response.data.response.results;
 
-      try {
-        await pageInstance.goto(article.webUrl, { waitUntil: 'domcontentloaded' });
+//     // Парсим изображения
+//     const browser = await puppeteer.launch({
+//     headless: true,
+//     args: ['--no-sandbox', '--disable-setuid-sandbox']
+//     });
 
-        // Получаем изображение
-        imageUrl = await pageInstance.evaluate(() => {
-          const img = document.querySelector('img') || document.querySelector('.article-body img');
-          return img ? img.src : null;
-        });
+//     const formattedArticles = [];
 
-        // Получаем текст статьи
-        fullText = await pageInstance.evaluate(() => {
-          const body = document.body;
-          return body ? body.innerText.slice(0, 2000) : '';
-        });
+//     for (const article of articles) {
+//       const pageInstance = await browser.newPage();
+//       let imageUrl = null;
+//       let fullText = '';
 
-      } catch (err) {
-        console.error(`Ошибка парсинга ${article.webUrl}:`, err.message);
-      } finally {
-        await pageInstance.close();
-      }
+//       try {
+//         await pageInstance.goto(article.webUrl, { waitUntil: 'domcontentloaded' });
 
-      // Извлекаем теги из заголовка + текста
-      const keywords = extractKeywords(article.webTitle + ' ' + fullText);
+//         // Получаем главное изображение
+//         imageUrl = await pageInstance.evaluate(() => {
+//           const img = document.querySelector('img') || document.querySelector('.article-body img');
+//           return img ? img.src : null;
+//         });
 
-      formattedArticles.push({
-        title: article.webTitle,
-        description: '',
-        url: article.webUrl,
-        imageUrl,
-        source: article.sectionId || 'unknown',
-        publishedAt: article.webPublicationDate,
-        categories: [article.sectionId || 'other'],
-        tags: keywords
-      });
-    }
+//         // Парсим ТОЛЬКО текст статьи — убираем мусор
+//         fullText = await pageInstance.evaluate(() => {
+//           const articleBody = document.querySelector('.article-body__content') ||
+//                               document.querySelector('.article__container') ||
+//                               document.querySelector('article') ||
+//                               document.body;
 
-    await browser.close();
+//           return articleBody ? articleBody.innerText.trim() : '';
+//         });
 
-    res.json({
-      status: 'ok',
-      totalResults: response.data.response.total,
-      currentPage: parseInt(page),
-      totalPages: Math.ceil(response.data.response.total / maxPerPage),
-      articles: formattedArticles
-    });
+//       } catch (err) {
+//         console.error(`Ошибка парсинга ${article.webUrl}:`, err.message);
+//       } finally {
+//         await pageInstance.close();
+//       }
 
-  } catch (error) {
-    console.error('Ошибка при поиске новостей:', error.message);
-    res.status(500).json({ error: 'Не удалось выполнить поиск' });
-  }
-};
+//       // Обрезаем до 200 символов
+//       const shortDescription = fullText
+//         .replace(/\s+/g, ' ')
+//         .trim()
+//         .slice(0, 200);
+
+//       // Извлекаем теги
+//       const keywords = extractKeywords(article.webTitle + ' ' + fullText);
+
+//       formattedArticles.push({
+//         title: article.webTitle,
+//         description: shortDescription || '', // теперь это только текст статьи
+//         url: article.webUrl,
+//         imageUrl,
+//         source: article.sectionId || 'unknown',
+//         publishedAt: article.webPublicationDate,
+//         categories: [article.sectionId || 'other'],
+//         tags: keywords
+//       });
+//     }
+
+//     await browser.close();
+
+//     // Отправляем ответ
+//     res.json({
+//       status: 'ok',
+//       totalResults: response.data.response.total,
+//       currentPage: parseInt(page),
+//       totalPages: Math.ceil(response.data.response.total / maxPerPage),
+//       articles: formattedArticles
+//     });
+
+//   } catch (error) {
+//     console.error('Ошибка при получении новостей:', error.message);
+//     res.status(500).json({ error: 'Не удалось загрузить новости' });
+//   }
+// };
+
+// exports.searchNewsByQuery = async (req, res) => {
+//   const {
+//     q,
+//     category,
+//     from,
+//     to,
+//     page = 1,
+//     maxPerPage = 9
+//   } = req.query;
+
+//   console.log('Параметры для поиска:', { q, category, from, to, page, maxPerPage });
+
+//   if (!process.env.GUARDIAN_API_KEY) {
+//     return res.status(500).json({ error: 'GUARDIAN_API_KEY не настроен' });
+//   }
+
+//   if (!q || typeof q !== 'string') {
+//     return res.status(400).json({ error: 'Необходим параметр q для поиска' });
+//   }
+
+//   try {
+//     const params = {
+//       'api-key': process.env.GUARDIAN_API_KEY,
+//       'page-size': parseInt(maxPerPage),
+//       'page': parseInt(page),
+//       'q': q
+//     };
+
+//     if (category) params.section = category;
+//     if (from) params['from-date'] = from;
+//     if (to) params['to-date'] = to;
+
+//     console.log('Параметры для Guardian Search API:', params);
+
+//     const response = await axios.get('https://content.guardianapis.com/search ', { params });
+
+//     const articles = response.data.response.results;
+
+//         const browser = await puppeteer.launch({
+//     headless: true,
+//     args: ['--no-sandbox', '--disable-setuid-sandbox']
+//     });
+
+//     const formattedArticles = [];
+
+//     for (const article of articles) {
+//       const pageInstance = await browser.newPage();
+//       let imageUrl = null;
+//       let fullText = '';
+
+//       try {
+//         await pageInstance.goto(article.webUrl, { waitUntil: 'domcontentloaded' });
+
+//         // Получаем изображение
+//         imageUrl = await pageInstance.evaluate(() => {
+//           const img = document.querySelector('img') || document.querySelector('.article-body img');
+//           return img ? img.src : null;
+//         });
+
+//         // Получаем текст статьи
+//         fullText = await pageInstance.evaluate(() => {
+//           const body = document.body;
+//           return body ? body.innerText.slice(0, 2000) : '';
+//         });
+
+//       } catch (err) {
+//         console.error(`Ошибка парсинга ${article.webUrl}:`, err.message);
+//       } finally {
+//         await pageInstance.close();
+//       }
+
+//       // Извлекаем теги из заголовка + текста
+//       const keywords = extractKeywords(article.webTitle + ' ' + fullText);
+
+//       formattedArticles.push({
+//         title: article.webTitle,
+//         description: '',
+//         url: article.webUrl,
+//         imageUrl,
+//         source: article.sectionId || 'unknown',
+//         publishedAt: article.webPublicationDate,
+//         categories: [article.sectionId || 'other'],
+//         tags: keywords
+//       });
+//     }
+
+//     await browser.close();
+
+//     res.json({
+//       status: 'ok',
+//       totalResults: response.data.response.total,
+//       currentPage: parseInt(page),
+//       totalPages: Math.ceil(response.data.response.total / maxPerPage),
+//       articles: formattedArticles
+//     });
+
+//   } catch (error) {
+//     console.error('Ошибка при поиске новостей:', error.message);
+//     res.status(500).json({ error: 'Не удалось выполнить поиск' });
+//   }
+// };
 
 
 
