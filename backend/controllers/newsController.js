@@ -14,7 +14,7 @@ exports.deleteNews = async (req, res) => {
   }
 };
 
-// const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer');
 // const puppeteer = require('puppeteer-core');
 const natural = require('natural');
 const tokenizer = new natural.WordTokenizer();
