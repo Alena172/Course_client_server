@@ -12,7 +12,7 @@ const app = express();
 // CORS Middleware
 const allowedOrigins = [
   'http://localhost:3000',
-  'https://frontend-rksp.vercel.app'
+  'https://course-client-server.vercel.app/'
 ];
 
 const corsOptions = {
