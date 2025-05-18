@@ -14,7 +14,59 @@ exports.deleteNews = async (req, res) => {
   }
 };
 
+// controllers/newsController.js
 
+exports.getAllNews = async (req, res) => {
+  const {
+    category,
+    from,
+    to,
+    lang = 'ru',
+    max = 20
+  } = req.query;
+
+  console.log('Полученные параметры:', { category, from, to, lang, max });
+
+  if (!process.env.GNEWS_API_KEY) {
+    return res.status(500).json({ error: 'GNEWS_API_KEY не настроен' });
+  }
+
+  try {
+    const params = {
+      token: process.env.GNEWS_API_KEY,
+      lang,
+      max: Math.min(max, 50),
+    };
+
+    if (category) params.category = category;
+    if (from) params.from = new Date(from).toISOString();
+    if (to) params.to = new Date(to).toISOString();
+
+    console.log('Параметры для GNews:', params);
+
+    const response = await axios.get('https://gnews.io/api/v4/top-headlines', { params });
+
+    const formattedArticles = response.data.articles.map(article => ({
+      title: article.title,
+      description: article.description,
+      url: article.url,
+      imageUrl: article.image,
+      source: article.source?.name || 'unknown',
+      publishedAt: article.publishedAt,
+      categories: categorizeContentEnhanced(article.title, article.description)
+    }));
+
+    res.json({
+      status: 'ok',
+      totalResults: response.data.totalArticles,
+      articles: formattedArticles
+    });
+
+  } catch (error) {
+    console.error('Ошибка при получении всех новостей:', error.message);
+    res.status(500).json({ error: 'Не удалось загрузить новости' });
+  }
+};
 
 // В начале файла, где объявлены кэши
 const userProfileCache = new Map();
@@ -366,7 +418,7 @@ exports.getRecommendations = async (req, res) => {
     const { userId } = req.params;
     const {
       page = 1,
-      limit = 10, // Фиксируем лимит в 10 рекомендаций
+      limit = 10, 
       likedKeywords = '',
       dislikedKeywords = '',
       preferredCategories = '',
