@@ -8,7 +8,7 @@ const {
   deleteFromJournal,
   getRecommendations,
   proxyGNewsAPI,
-  proxySearchNews,
+  searchNewsByQuery,
   getAllNews
 } = require('../controllers/newsController');
 
@@ -24,7 +24,7 @@ router.get('/recommendations/:userId', auth, getRecommendations);
 
 router.delete('/:id', auth, newsController.deleteNews);
 
-router.get('/search', proxySearchNews);
+router.get('/search', searchNewsByQuery);
 
 router.get('/all', getAllNews);
 

@@ -24,7 +24,9 @@
           "mongoose": "^8.13.3",
           "natural": "^8.0.1",
           "node-cache": "^5.1.2",
-          "node-cron": "^4.0.5"
+          "node-cron": "^4.0.5",
+          "puppeteer": "^24.8.2",
+          "stopword": "^3.1.4"
      },
      "devDependencies": {
           "jest": "^29.7.0",
