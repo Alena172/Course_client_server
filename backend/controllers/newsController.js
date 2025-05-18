@@ -7,21 +7,12 @@ const natural = require('natural');
 const tokenizer = new natural.WordTokenizer();
 const stopword = require('stopword');
 
-// Поддержка headless Chrome через chrome-aws-lambda
+// === Поддержка headless Chrome через chromium-min ===
 const chromium = require('@sparticuz/chromium-min');
-const executablePath = require('chrome-aws-lambda').executablePath;
- 
-exports.deleteNews = async (req, res) => {
-  const { id } = req.params;
 
-  try {
-    await News.findByIdAndDelete(id);
-    res.json({ message: 'Новость удалена' });
-  } catch (err) {
-    res.status(500).json({ message: 'Ошибка при удалении' });
-  }
-};
-
+// Убедись, что ты НЕ используешь chrome-aws-lambda, только chromium-min
+// chromium.executablePath() — это строка, не функция
+// chromium.args — массив для запуска браузера
 
 /**
  * Парсит статью: получает изображение и текст
@@ -31,7 +22,7 @@ exports.deleteNews = async (req, res) => {
 async function parseArticleContent(url) {
   const options = {
     args: chromium.args,
-    executablePath: await executablePath(),
+    executablePath: await chromium.executablePath(), // ✅ Правильное использование
     headless: true,
     defaultViewport: chromium.defaultViewport,
     ignoreHTTPSErrors: true
@@ -55,7 +46,7 @@ async function parseArticleContent(url) {
                           document.querySelector('.article__container') ||
                           document.body;
 
-      return articleBody ? articleBody.innerText.trim() : '';
+      return articleBody ? articleBody.innerText.trim().slice(0, 2000) : '';
     });
 
     await browser.close();
@@ -66,6 +57,7 @@ async function parseArticleContent(url) {
     return { imageUrl: null, fullText: '' };
   }
 }
+
 
 
 /**
@@ -418,6 +410,20 @@ exports.searchNewsByQuery = async (req, res) => {
 //     });
 //   }
 // };
+
+
+ 
+exports.deleteNews = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    await News.findByIdAndDelete(id);
+    res.json({ message: 'Новость удалена' });
+  } catch (err) {
+    res.status(500).json({ message: 'Ошибка при удалении' });
+  }
+};
+
 
 
 
