@@ -2,11 +2,14 @@ const News = require('../models/News');
 const User = require('../models/User'); // Модель User
 const axios = require('axios'); 
 const mongoose = require('mongoose');
-const puppeteer = require('puppeteer-core'); // Поддержка без headless Chromium
+const puppeteer = require('puppeteer-core'); // Не требует установки Chrome
 const natural = require('natural');
 const tokenizer = new natural.WordTokenizer();
 const stopword = require('stopword');
-const chromium = require('chrome-aws-lambda');
+
+// Поддержка headless Chrome через chrome-aws-lambda
+const chromium = require('@sparticuz/chromium-min');
+const executablePath = require('chrome-aws-lambda').executablePath;
  
 exports.deleteNews = async (req, res) => {
   const { id } = req.params;
@@ -20,11 +23,18 @@ exports.deleteNews = async (req, res) => {
 };
 
 
+/**
+ * Парсит статью: получает изображение и текст
+ * @param {string} url - URL статьи
+ * @returns {{ imageUrl: string | null, fullText: string }}
+ */
 async function parseArticleContent(url) {
   const options = {
     args: chromium.args,
-    executablePath: await chromium.executablePath,
-    headless: true
+    executablePath: await executablePath(),
+    headless: true,
+    defaultViewport: chromium.defaultViewport,
+    ignoreHTTPSErrors: true
   };
 
   const browser = await puppeteer.launch(options);
@@ -39,7 +49,7 @@ async function parseArticleContent(url) {
       return img ? img.src : null;
     });
 
-    // Получаем текст статьи
+    // Получаем чистый текст статьи
     const fullText = await page.evaluate(() => {
       const articleBody = document.querySelector('.article-body__content') ||
                           document.querySelector('.article__container') ||
@@ -184,70 +194,32 @@ exports.getAllNews = async (req, res) => {
 
     const response = await axios.get('https://content.guardianapis.com/search ', { params });
 
-    const articles = response.data.response.results;
-
-    // Парсим изображения
-    const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
+    const articles = response.data.response.results || [];
 
     const formattedArticles = [];
 
     for (const article of articles) {
-      const pageInstance = await browser.newPage();
-      let imageUrl = null;
-      let fullText = '';
+      const { imageUrl, fullText } = await parseArticleContent(article.webUrl);
 
-      try {
-        await pageInstance.goto(article.webUrl, { waitUntil: 'domcontentloaded' });
-
-        // Получаем главное изображение
-        imageUrl = await pageInstance.evaluate(() => {
-          const img = document.querySelector('img') || document.querySelector('.article-body img');
-          return img ? img.src : null;
-        });
-
-        // Парсим ТОЛЬКО текст статьи — убираем мусор
-        fullText = await pageInstance.evaluate(() => {
-          const articleBody = document.querySelector('.article-body__content') ||
-                              document.querySelector('.article__container') ||
-                              document.querySelector('article') ||
-                              document.body;
-
-          return articleBody ? articleBody.innerText.trim() : '';
-        });
-
-      } catch (err) {
-        console.error(`Ошибка парсинга ${article.webUrl}:`, err.message);
-      } finally {
-        await pageInstance.close();
-      }
-
-      // Обрезаем до 200 символов
       const shortDescription = fullText
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 200);
 
-      // Извлекаем теги
-      const keywords = extractKeywords(article.webTitle + ' ' + fullText);
+      const keywords = extractKeywords((article.webTitle || '') + ' ' + (fullText || ''));
 
       formattedArticles.push({
-        title: article.webTitle,
-        description: shortDescription || '', // теперь это только текст статьи
-        url: article.webUrl,
+        title: article.webTitle || '',
+        description: shortDescription || '',
+        url: article.webUrl || '',
         imageUrl,
         source: article.sectionId || 'unknown',
-        publishedAt: article.webPublicationDate,
+        publishedAt: article.webPublicationDate || '',
         categories: [article.sectionId || 'other'],
         tags: keywords
       });
     }
 
-    await browser.close();
-
-    // Отправляем ответ
     res.json({
       status: 'ok',
       totalResults: response.data.response.total,
@@ -261,6 +233,7 @@ exports.getAllNews = async (req, res) => {
     res.status(500).json({ error: 'Не удалось загрузить новости' });
   }
 };
+
 
 exports.searchNewsByQuery = async (req, res) => {
   const {
