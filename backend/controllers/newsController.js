@@ -15,7 +15,7 @@ exports.deleteNews = async (req, res) => {
 };
 
 // const puppeteer = require('puppeteer');
-const puppeteer = require('puppeteer-core');
+// const puppeteer = require('puppeteer-core');
 const natural = require('natural');
 const tokenizer = new natural.WordTokenizer();
 const stopword = require('stopword'); // имя переменной лучше не менять
@@ -78,14 +78,8 @@ exports.getAllNews = async (req, res) => {
 
     // Парсим изображения
     const browser = await puppeteer.launch({
-      executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', // Путь к Chromium
-      headless: 'new', // Современный режим без GUI
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox', // Обязательно для Linux-серверов
-        '--disable-dev-shm-usage',  // Решает проблему с /dev/shm 
-        '--disable-gpu',            // Иногда требуется на серверах
-      ]
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
 
     const formattedArticles = [];
@@ -196,15 +190,9 @@ exports.searchNewsByQuery = async (req, res) => {
 
     const articles = response.data.response.results;
 
-    const browser = await puppeteer.launch({
-      executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', // Путь к Chromium
-      headless: 'new', // Современный режим без GUI
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox', // Обязательно для Linux-серверов
-        '--disable-dev-shm-usage',  // Решает проблему с /dev/shm 
-        '--disable-gpu',            // Иногда требуется на серверах
-      ]
+        const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
 
     const formattedArticles = [];
