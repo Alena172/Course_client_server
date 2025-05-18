@@ -154,300 +154,297 @@ exports.getAllNews = async (req, res) => {
 };
 
 
+exports.getAllNews = async (req, res) => {
+  const {
+    category,
+    from,
+    to,
+    page = 1,
+    maxPerPage = 9
+  } = req.query;
 
+  console.log('Полученные параметры:', { category, from, to, page, maxPerPage });
 
-
-// exports.getAllNews = async (req, res) => {
-//   const {
-//     category,
-//     from,
-//     to,
-//     page = 1,
-//     maxPerPage = 9
-//   } = req.query;
-
-//   console.log('Полученные параметры:', { category, from, to, page, maxPerPage });
-
-//   if (!process.env.GUARDIAN_API_KEY) {
-//     return res.status(500).json({ error: 'GUARDIAN_API_KEY не настроен' });
-//   }
-
-//   try {
-//     const params = {
-//       'api-key': process.env.GUARDIAN_API_KEY,
-//       'page-size': parseInt(maxPerPage),
-//       'page': parseInt(page)
-//     };
-
-//     if (category) params.section = category;
-//     if (from) params['from-date'] = from;
-//     if (to) params['to-date'] = to;
-
-//     console.log('Параметры для запроса к The Guardian:', params);
-
-//     const response = await axios.get('https://content.guardianapis.com/search ', { params });
-
-//     const articles = response.data.response.results;
-
-//     // Парсим изображения
-//     const browser = await puppeteer.launch({
-//     headless: true,
-//     args: ['--no-sandbox', '--disable-setuid-sandbox']
-//     });
-
-//     const formattedArticles = [];
-
-//     for (const article of articles) {
-//       const pageInstance = await browser.newPage();
-//       let imageUrl = null;
-//       let fullText = '';
-
-//       try {
-//         await pageInstance.goto(article.webUrl, { waitUntil: 'domcontentloaded' });
-
-//         // Получаем главное изображение
-//         imageUrl = await pageInstance.evaluate(() => {
-//           const img = document.querySelector('img') || document.querySelector('.article-body img');
-//           return img ? img.src : null;
-//         });
-
-//         // Парсим ТОЛЬКО текст статьи — убираем мусор
-//         fullText = await pageInstance.evaluate(() => {
-//           const articleBody = document.querySelector('.article-body__content') ||
-//                               document.querySelector('.article__container') ||
-//                               document.querySelector('article') ||
-//                               document.body;
-
-//           return articleBody ? articleBody.innerText.trim() : '';
-//         });
-
-//       } catch (err) {
-//         console.error(`Ошибка парсинга ${article.webUrl}:`, err.message);
-//       } finally {
-//         await pageInstance.close();
-//       }
-
-//       // Обрезаем до 200 символов
-//       const shortDescription = fullText
-//         .replace(/\s+/g, ' ')
-//         .trim()
-//         .slice(0, 200);
-
-//       // Извлекаем теги
-//       const keywords = extractKeywords(article.webTitle + ' ' + fullText);
-
-//       formattedArticles.push({
-//         title: article.webTitle,
-//         description: shortDescription || '', // теперь это только текст статьи
-//         url: article.webUrl,
-//         imageUrl,
-//         source: article.sectionId || 'unknown',
-//         publishedAt: article.webPublicationDate,
-//         categories: [article.sectionId || 'other'],
-//         tags: keywords
-//       });
-//     }
-
-//     await browser.close();
-
-//     // Отправляем ответ
-//     res.json({
-//       status: 'ok',
-//       totalResults: response.data.response.total,
-//       currentPage: parseInt(page),
-//       totalPages: Math.ceil(response.data.response.total / maxPerPage),
-//       articles: formattedArticles
-//     });
-
-//   } catch (error) {
-//     console.error('Ошибка при получении новостей:', error.message);
-//     res.status(500).json({ error: 'Не удалось загрузить новости' });
-//   }
-// };
-
-// exports.searchNewsByQuery = async (req, res) => {
-//   const {
-//     q,
-//     category,
-//     from,
-//     to,
-//     page = 1,
-//     maxPerPage = 9
-//   } = req.query;
-
-//   console.log('Параметры для поиска:', { q, category, from, to, page, maxPerPage });
-
-//   if (!process.env.GUARDIAN_API_KEY) {
-//     return res.status(500).json({ error: 'GUARDIAN_API_KEY не настроен' });
-//   }
-
-//   if (!q || typeof q !== 'string') {
-//     return res.status(400).json({ error: 'Необходим параметр q для поиска' });
-//   }
-
-//   try {
-//     const params = {
-//       'api-key': process.env.GUARDIAN_API_KEY,
-//       'page-size': parseInt(maxPerPage),
-//       'page': parseInt(page),
-//       'q': q
-//     };
-
-//     if (category) params.section = category;
-//     if (from) params['from-date'] = from;
-//     if (to) params['to-date'] = to;
-
-//     console.log('Параметры для Guardian Search API:', params);
-
-//     const response = await axios.get('https://content.guardianapis.com/search ', { params });
-
-//     const articles = response.data.response.results;
-
-//         const browser = await puppeteer.launch({
-//     headless: true,
-//     args: ['--no-sandbox', '--disable-setuid-sandbox']
-//     });
-
-//     const formattedArticles = [];
-
-//     for (const article of articles) {
-//       const pageInstance = await browser.newPage();
-//       let imageUrl = null;
-//       let fullText = '';
-
-//       try {
-//         await pageInstance.goto(article.webUrl, { waitUntil: 'domcontentloaded' });
-
-//         // Получаем изображение
-//         imageUrl = await pageInstance.evaluate(() => {
-//           const img = document.querySelector('img') || document.querySelector('.article-body img');
-//           return img ? img.src : null;
-//         });
-
-//         // Получаем текст статьи
-//         fullText = await pageInstance.evaluate(() => {
-//           const body = document.body;
-//           return body ? body.innerText.slice(0, 2000) : '';
-//         });
-
-//       } catch (err) {
-//         console.error(`Ошибка парсинга ${article.webUrl}:`, err.message);
-//       } finally {
-//         await pageInstance.close();
-//       }
-
-//       // Извлекаем теги из заголовка + текста
-//       const keywords = extractKeywords(article.webTitle + ' ' + fullText);
-
-//       formattedArticles.push({
-//         title: article.webTitle,
-//         description: '',
-//         url: article.webUrl,
-//         imageUrl,
-//         source: article.sectionId || 'unknown',
-//         publishedAt: article.webPublicationDate,
-//         categories: [article.sectionId || 'other'],
-//         tags: keywords
-//       });
-//     }
-
-//     await browser.close();
-
-//     res.json({
-//       status: 'ok',
-//       totalResults: response.data.response.total,
-//       currentPage: parseInt(page),
-//       totalPages: Math.ceil(response.data.response.total / maxPerPage),
-//       articles: formattedArticles
-//     });
-
-//   } catch (error) {
-//     console.error('Ошибка при поиске новостей:', error.message);
-//     res.status(500).json({ error: 'Не удалось выполнить поиск' });
-//   }
-// };
-
-
-
-exports.proxySearchNews = async (req, res) => {
-  const { q, lang = 'ru', after, pageSize = 10 } = req.query;
-
-  if (!process.env.GNEWS_API_KEY) {
-    return res.status(500).json({ error: 'API-ключ для GNews не задан' });
-  }
-
-  if (!q || q.trim().length < 3) {
-    return res.status(400).json({ error: 'Поисковый запрос должен содержать минимум 3 символа' });
+  if (!process.env.GUARDIAN_API_KEY) {
+    return res.status(500).json({ error: 'GUARDIAN_API_KEY не настроен' });
   }
 
   try {
     const params = {
-      q,
-      lang,
-      token: process.env.GNEWS_API_KEY,
-      max: Math.min(pageSize, 20), // Ограничиваем максимальный размер страницы
+      'api-key': process.env.GUARDIAN_API_KEY,
+      'page-size': parseInt(maxPerPage),
+      'page': parseInt(page)
     };
 
-    // Добавляем параметр сортировки по дате
-    params.sortby = 'publishedAt';
+    if (category) params.section = category;
+    if (from) params['from-date'] = from;
+    if (to) params['to-date'] = to;
 
-    const response = await axios.get('https://gnews.io/api/v4/search', {
-      params,
-      timeout: 10000
+    console.log('Параметры для запроса к The Guardian:', params);
+
+    const response = await axios.get('https://content.guardianapis.com/search ', { params });
+
+    const articles = response.data.response.results;
+
+    // Парсим изображения
+    const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
 
-    let articles = response.data.articles || [];
-    
-    // Сортировка по дате (на случай, если API не отсортировало)
-    articles.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+    const formattedArticles = [];
 
-    // Фильтрация по дате для пагинации
-    if (after) {
-      articles = articles.filter(article => new Date(article.publishedAt) < new Date(after));
-    }
+    for (const article of articles) {
+      const pageInstance = await browser.newPage();
+      let imageUrl = null;
+      let fullText = '';
 
-    // Ограничиваем количество возвращаемых статей
-    articles = articles.slice(0, pageSize);
+      try {
+        await pageInstance.goto(article.webUrl, { waitUntil: 'domcontentloaded' });
 
-    // Форматируем ответ
-    const result = {
-      articles: articles.map(article => ({
-        title: article.title,
-        description: article.description,
-        content: article.content,
-        url: article.url,
-        image: article.image,
-        source: article.source?.name,
-        publishedAt: article.publishedAt,
-      })),
-      totalResults: response.data.totalArticles || 0,
-    };
+        // Получаем главное изображение
+        imageUrl = await pageInstance.evaluate(() => {
+          const img = document.querySelector('img') || document.querySelector('.article-body img');
+          return img ? img.src : null;
+        });
 
-    res.json(result);
-  } catch (error) {
-    console.error('Ошибка при обращении к GNews:', {
-      message: error.message,
-      status: error.response?.status,
-      data: error.response?.data
-    });
+        // Парсим ТОЛЬКО текст статьи — убираем мусор
+        fullText = await pageInstance.evaluate(() => {
+          const articleBody = document.querySelector('.article-body__content') ||
+                              document.querySelector('.article__container') ||
+                              document.querySelector('article') ||
+                              document.body;
 
-    if (error.code === 'ECONNABORTED') {
-      return res.status(504).json({ error: 'Превышено время ожидания ответа от GNews' });
-    }
+          return articleBody ? articleBody.innerText.trim() : '';
+        });
 
-    if (error.response?.status === 429) {
-      return res.status(503).json({ 
-        error: 'Превышен лимит запросов к GNews API',
-        details: 'Бесплатная версия API ограничена 100 запросами в день'
+      } catch (err) {
+        console.error(`Ошибка парсинга ${article.webUrl}:`, err.message);
+      } finally {
+        await pageInstance.close();
+      }
+
+      // Обрезаем до 200 символов
+      const shortDescription = fullText
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 200);
+
+      // Извлекаем теги
+      const keywords = extractKeywords(article.webTitle + ' ' + fullText);
+
+      formattedArticles.push({
+        title: article.webTitle,
+        description: shortDescription || '', // теперь это только текст статьи
+        url: article.webUrl,
+        imageUrl,
+        source: article.sectionId || 'unknown',
+        publishedAt: article.webPublicationDate,
+        categories: [article.sectionId || 'other'],
+        tags: keywords
       });
     }
 
-    res.status(500).json({ 
-      error: 'Ошибка при обращении к GNews API',
-      details: error.message
+    await browser.close();
+
+    // Отправляем ответ
+    res.json({
+      status: 'ok',
+      totalResults: response.data.response.total,
+      currentPage: parseInt(page),
+      totalPages: Math.ceil(response.data.response.total / maxPerPage),
+      articles: formattedArticles
     });
+
+  } catch (error) {
+    console.error('Ошибка при получении новостей:', error.message);
+    res.status(500).json({ error: 'Не удалось загрузить новости' });
   }
 };
+
+exports.searchNewsByQuery = async (req, res) => {
+  const {
+    q,
+    category,
+    from,
+    to,
+    page = 1,
+    maxPerPage = 9
+  } = req.query;
+
+  console.log('Параметры для поиска:', { q, category, from, to, page, maxPerPage });
+
+  if (!process.env.GUARDIAN_API_KEY) {
+    return res.status(500).json({ error: 'GUARDIAN_API_KEY не настроен' });
+  }
+
+  if (!q || typeof q !== 'string') {
+    return res.status(400).json({ error: 'Необходим параметр q для поиска' });
+  }
+
+  try {
+    const params = {
+      'api-key': process.env.GUARDIAN_API_KEY,
+      'page-size': parseInt(maxPerPage),
+      'page': parseInt(page),
+      'q': q
+    };
+
+    if (category) params.section = category;
+    if (from) params['from-date'] = from;
+    if (to) params['to-date'] = to;
+
+    console.log('Параметры для Guardian Search API:', params);
+
+    const response = await axios.get('https://content.guardianapis.com/search ', { params });
+
+    const articles = response.data.response.results;
+
+        const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+
+    const formattedArticles = [];
+
+    for (const article of articles) {
+      const pageInstance = await browser.newPage();
+      let imageUrl = null;
+      let fullText = '';
+
+      try {
+        await pageInstance.goto(article.webUrl, { waitUntil: 'domcontentloaded' });
+
+        // Получаем изображение
+        imageUrl = await pageInstance.evaluate(() => {
+          const img = document.querySelector('img') || document.querySelector('.article-body img');
+          return img ? img.src : null;
+        });
+
+        // Получаем текст статьи
+        fullText = await pageInstance.evaluate(() => {
+          const body = document.body;
+          return body ? body.innerText.slice(0, 2000) : '';
+        });
+
+      } catch (err) {
+        console.error(`Ошибка парсинга ${article.webUrl}:`, err.message);
+      } finally {
+        await pageInstance.close();
+      }
+
+      // Извлекаем теги из заголовка + текста
+      const keywords = extractKeywords(article.webTitle + ' ' + fullText);
+
+      formattedArticles.push({
+        title: article.webTitle,
+        description: '',
+        url: article.webUrl,
+        imageUrl,
+        source: article.sectionId || 'unknown',
+        publishedAt: article.webPublicationDate,
+        categories: [article.sectionId || 'other'],
+        tags: keywords
+      });
+    }
+
+    await browser.close();
+
+    res.json({
+      status: 'ok',
+      totalResults: response.data.response.total,
+      currentPage: parseInt(page),
+      totalPages: Math.ceil(response.data.response.total / maxPerPage),
+      articles: formattedArticles
+    });
+
+  } catch (error) {
+    console.error('Ошибка при поиске новостей:', error.message);
+    res.status(500).json({ error: 'Не удалось выполнить поиск' });
+  }
+};
+
+
+
+// exports.proxySearchNews = async (req, res) => {
+//   const { q, lang = 'ru', after, pageSize = 10 } = req.query;
+
+//   if (!process.env.GNEWS_API_KEY) {
+//     return res.status(500).json({ error: 'API-ключ для GNews не задан' });
+//   }
+
+//   if (!q || q.trim().length < 3) {
+//     return res.status(400).json({ error: 'Поисковый запрос должен содержать минимум 3 символа' });
+//   }
+
+//   try {
+//     const params = {
+//       q,
+//       lang,
+//       token: process.env.GNEWS_API_KEY,
+//       max: Math.min(pageSize, 20), // Ограничиваем максимальный размер страницы
+//     };
+
+//     // Добавляем параметр сортировки по дате
+//     params.sortby = 'publishedAt';
+
+//     const response = await axios.get('https://gnews.io/api/v4/search', {
+//       params,
+//       timeout: 10000
+//     });
+
+//     let articles = response.data.articles || [];
+    
+//     // Сортировка по дате (на случай, если API не отсортировало)
+//     articles.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+
+//     // Фильтрация по дате для пагинации
+//     if (after) {
+//       articles = articles.filter(article => new Date(article.publishedAt) < new Date(after));
+//     }
+
+//     // Ограничиваем количество возвращаемых статей
+//     articles = articles.slice(0, pageSize);
+
+//     // Форматируем ответ
+//     const result = {
+//       articles: articles.map(article => ({
+//         title: article.title,
+//         description: article.description,
+//         content: article.content,
+//         url: article.url,
+//         image: article.image,
+//         source: article.source?.name,
+//         publishedAt: article.publishedAt,
+//       })),
+//       totalResults: response.data.totalArticles || 0,
+//     };
+
+//     res.json(result);
+//   } catch (error) {
+//     console.error('Ошибка при обращении к GNews:', {
+//       message: error.message,
+//       status: error.response?.status,
+//       data: error.response?.data
+//     });
+
+//     if (error.code === 'ECONNABORTED') {
+//       return res.status(504).json({ error: 'Превышено время ожидания ответа от GNews' });
+//     }
+
+//     if (error.response?.status === 429) {
+//       return res.status(503).json({ 
+//         error: 'Превышен лимит запросов к GNews API',
+//         details: 'Бесплатная версия API ограничена 100 запросами в день'
+//       });
+//     }
+
+//     res.status(500).json({ 
+//       error: 'Ошибка при обращении к GNews API',
+//       details: error.message
+//     });
+//   }
+// };
 
 
 
@@ -1078,28 +1075,7 @@ function processGNewsArticle(article) {
   };
 }
 
-const cron = require('node-cron');
 
-// Обновление кэша каждые 30 минут
-cron.schedule('*/30 * * * *', async () => {
-  try {
-    const response = await axios.get('https://gnews.io/api/v4/top-headlines', {
-      params: {
-        max: 20,
-        lang: 'en',
-        token: process.env.GNEWS_API_KEY
-      }
-    });
-    
-    // Сохраняем в кэш
-    newsCache.set('preloaded-news', response.data.articles, 1800); // 30 минут
-  } catch (error) {
-    console.error('Failed to refresh news cache:', error.message);
-  }
-});
-
-const NodeCache = require('node-cache');
-const newsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 }); // Кэш на 5 минут
 
 async function fetchCachedGNews(url, params) {
   const cacheKey = `${url}-${JSON.stringify(params)}`;
