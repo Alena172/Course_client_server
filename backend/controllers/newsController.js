@@ -76,7 +76,9 @@ exports.getAllNews = async (req, res) => {
     const articles = response.data.response.results;
 
     // Парсим изображения
-    const browser = await puppeteer.launch({ headless: 'new' });
+    const browser = await puppeteer.launch({
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
 
     const formattedArticles = [];
 
@@ -186,7 +188,9 @@ exports.searchNewsByQuery = async (req, res) => {
 
     const articles = response.data.response.results;
 
-    const browser = await puppeteer.launch({ headless: 'new' });
+    const browser = await puppeteer.launch({
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
 
     const formattedArticles = [];
 
