@@ -542,7 +542,7 @@ exports.proxyGNewsAPI = async (req, res) => {
     const params = { token: process.env.GNEWS_API_KEY, country, lang, max};
     if (category) params.category = category;
     if (query) params.q = query;
-    const response = await axios.get('https://gnews.io/api/v4/top-headlines ', {params, timeout: 10000}
+    const response = await axios.get('https://gnews.io/api/v4/top-headlines ', {params, timeout: 100000}
     );
     const formattedArticles = response.data.articles.map(article => ({
       source: {
@@ -972,7 +972,7 @@ async function fetchCachedGNews(url, params) {
   try {
     const response = await axios.get(url, { 
       params: { ...params, token: process.env.GNEWS_API_KEY },
-      timeout: 10000
+      timeout: 100000
     });
     newsCache.set(cacheKey, response.data);
     return response.data;
@@ -1028,7 +1028,7 @@ async function fetchFallbackRecommendations(limit, freshness) {
       console.error(`Fallback strategy ${strategy} failed:`, error.message);
       // При ошибке 429 делаем паузу перед следующей попыткой
       if (error.response?.status === 429) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 100000));
       }
     }
   }
