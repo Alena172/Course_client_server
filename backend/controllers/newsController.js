@@ -2,63 +2,22 @@ const News = require('../models/News');
 const User = require('../models/User'); // Модель User
 const axios = require('axios'); 
 const mongoose = require('mongoose');
-const puppeteer = require('puppeteer-core'); // Не требует установки Chrome
-const natural = require('natural');
-const tokenizer = new natural.WordTokenizer();
-const stopword = require('stopword');
-
-// === Поддержка headless Chrome через chromium-min ===
-const chromium = require('@sparticuz/chromium-min');
-
-// Убедись, что ты НЕ используешь chrome-aws-lambda, только chromium-min
-// chromium.executablePath() — это строка, не функция
-// chromium.args — массив для запуска браузера
-
-/**
- * Парсит статью: получает изображение и текст
- * @param {string} url - URL статьи
- * @returns {{ imageUrl: string | null, fullText: string }}
- */
-async function parseArticleContent(url) {
-  const options = {
-    args: chromium.args,
-    executablePath: await chromium.executablePath(), // ✅ Правильное использование
-    headless: true,
-    defaultViewport: chromium.defaultViewport,
-    ignoreHTTPSErrors: true
-  };
-
-  const browser = await puppeteer.launch(options);
-  const page = await browser.newPage();
+ 
+exports.deleteNews = async (req, res) => {
+  const { id } = req.params;
 
   try {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-
-    // Получаем главное изображение
-    const imageUrl = await page.evaluate(() => {
-      const img = document.querySelector('img') || document.querySelector('.article-body img');
-      return img ? img.src : null;
-    });
-
-    // Получаем чистый текст статьи
-    const fullText = await page.evaluate(() => {
-      const articleBody = document.querySelector('.article-body__content') ||
-                          document.querySelector('.article__container') ||
-                          document.body;
-
-      return articleBody ? articleBody.innerText.trim().slice(0, 2000) : '';
-    });
-
-    await browser.close();
-    return { imageUrl, fullText };
+    await News.findByIdAndDelete(id);
+    res.json({ message: 'Новость удалена' });
   } catch (err) {
-    console.error(`Ошибка парсинга ${url}:`, err.message);
-    await browser.close();
-    return { imageUrl: null, fullText: '' };
+    res.status(500).json({ message: 'Ошибка при удалении' });
   }
-}
+};
 
-
+const puppeteer = require('puppeteer');
+const natural = require('natural');
+const tokenizer = new natural.WordTokenizer();
+const stopword = require('stopword'); // имя переменной лучше не менять
 
 /**
  * Извлекает ключевые слова из текста статьи
@@ -114,33 +73,67 @@ exports.getAllNews = async (req, res) => {
 
     const response = await axios.get('https://content.guardianapis.com/search ', { params });
 
-    const articles = response.data.response.results || [];
+    const articles = response.data.response.results;
+
+    // Парсим изображения
+    const browser = await puppeteer.launch({ headless: 'new' });
 
     const formattedArticles = [];
 
     for (const article of articles) {
-      const { imageUrl, fullText } = await parseArticleContent(article.webUrl);
+      const pageInstance = await browser.newPage();
+      let imageUrl = null;
+      let fullText = '';
 
-      // Описание статьи — обрезано до 200 символов
+      try {
+        await pageInstance.goto(article.webUrl, { waitUntil: 'domcontentloaded' });
+
+        // Получаем главное изображение
+        imageUrl = await pageInstance.evaluate(() => {
+          const img = document.querySelector('img') || document.querySelector('.article-body img');
+          return img ? img.src : null;
+        });
+
+        // Парсим ТОЛЬКО текст статьи — убираем мусор
+        fullText = await pageInstance.evaluate(() => {
+          const articleBody = document.querySelector('.article-body__content') ||
+                              document.querySelector('.article__container') ||
+                              document.querySelector('article') ||
+                              document.body;
+
+          return articleBody ? articleBody.innerText.trim() : '';
+        });
+
+      } catch (err) {
+        console.error(`Ошибка парсинга ${article.webUrl}:`, err.message);
+      } finally {
+        await pageInstance.close();
+      }
+
+      // Обрезаем до 200 символов
       const shortDescription = fullText
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 200);
 
-      // Извлечение тегов
-      const keywords = extractKeywords((article.webTitle || '') + ' ' + (fullText || ''));
+      // Извлекаем теги
+      const keywords = extractKeywords(article.webTitle + ' ' + fullText);
 
       formattedArticles.push({
-        title: article.webTitle || '',
-        description: shortDescription || '',
-        url: article.webUrl || '',
+        title: article.webTitle,
+        description: shortDescription || '', // теперь это только текст статьи
+        url: article.webUrl,
         imageUrl,
         source: article.sectionId || 'unknown',
-        publishedAt: article.webPublicationDate || '',
+        publishedAt: article.webPublicationDate,
         categories: [article.sectionId || 'other'],
         tags: keywords
       });
     }
+
+    await browser.close();
+
+    // Отправляем ответ
     res.json({
       status: 'ok',
       totalResults: response.data.response.total,
@@ -154,78 +147,6 @@ exports.getAllNews = async (req, res) => {
     res.status(500).json({ error: 'Не удалось загрузить новости' });
   }
 };
-
-
-exports.getAllNews = async (req, res) => {
-  const {
-    category,
-    from,
-    to,
-    page = 1,
-    maxPerPage = 9
-  } = req.query;
-
-  console.log('Полученные параметры:', { category, from, to, page, maxPerPage });
-
-  if (!process.env.GUARDIAN_API_KEY) {
-    return res.status(500).json({ error: 'GUARDIAN_API_KEY не настроен' });
-  }
-
-  try {
-    const params = {
-      'api-key': process.env.GUARDIAN_API_KEY,
-      'page-size': parseInt(maxPerPage),
-      'page': parseInt(page)
-    };
-
-    if (category) params.section = category;
-    if (from) params['from-date'] = from;
-    if (to) params['to-date'] = to;
-
-    console.log('Параметры для запроса к The Guardian:', params);
-
-    const response = await axios.get('https://content.guardianapis.com/search ', { params });
-
-    const articles = response.data.response.results || [];
-
-    const formattedArticles = [];
-
-    for (const article of articles) {
-      const { imageUrl, fullText } = await parseArticleContent(article.webUrl);
-
-      const shortDescription = fullText
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 200);
-
-      const keywords = extractKeywords((article.webTitle || '') + ' ' + (fullText || ''));
-
-      formattedArticles.push({
-        title: article.webTitle || '',
-        description: shortDescription || '',
-        url: article.webUrl || '',
-        imageUrl,
-        source: article.sectionId || 'unknown',
-        publishedAt: article.webPublicationDate || '',
-        categories: [article.sectionId || 'other'],
-        tags: keywords
-      });
-    }
-
-    res.json({
-      status: 'ok',
-      totalResults: response.data.response.total,
-      currentPage: parseInt(page),
-      totalPages: Math.ceil(response.data.response.total / maxPerPage),
-      articles: formattedArticles
-    });
-
-  } catch (error) {
-    console.error('Ошибка при получении новостей:', error.message);
-    res.status(500).json({ error: 'Не удалось загрузить новости' });
-  }
-};
-
 
 exports.searchNewsByQuery = async (req, res) => {
   const {
@@ -265,10 +186,7 @@ exports.searchNewsByQuery = async (req, res) => {
 
     const articles = response.data.response.results;
 
-        const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
+    const browser = await puppeteer.launch({ headless: 'new' });
 
     const formattedArticles = [];
 
@@ -410,20 +328,6 @@ exports.searchNewsByQuery = async (req, res) => {
 //     });
 //   }
 // };
-
-
- 
-exports.deleteNews = async (req, res) => {
-  const { id } = req.params;
-
-  try {
-    await News.findByIdAndDelete(id);
-    res.json({ message: 'Новость удалена' });
-  } catch (err) {
-    res.status(500).json({ message: 'Ошибка при удалении' });
-  }
-};
-
 
 
 
