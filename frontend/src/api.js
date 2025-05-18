@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Для разработки берем из .env, для продакшена - из переменных Vercel
 const API_BASE_URL = process.env.NODE_ENV === 'production'
-  ? 'https://course-server-amqh.onrender.com' // Замените на реальный URL бэкенда
+  ? 'https://course-client-server-1.onrender.com' // Замените на реальный URL бэкенда
   : 'http://localhost:5000';
 
 const API = axios.create({
