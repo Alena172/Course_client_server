@@ -78,7 +78,7 @@ exports.getAllNews = async (req, res) => {
 
     // Парсим изображения
     const browser = await puppeteer.launch({
-      executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium-browser', // Путь к Chromium
+      executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', // Путь к Chromium
       headless: 'new', // Современный режим без GUI
       args: [
         '--no-sandbox',
@@ -197,7 +197,7 @@ exports.searchNewsByQuery = async (req, res) => {
     const articles = response.data.response.results;
 
     const browser = await puppeteer.launch({
-      executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium-browser', // Путь к Chromium
+      executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', // Путь к Chromium
       headless: 'new', // Современный режим без GUI
       args: [
         '--no-sandbox',
