@@ -58,24 +58,24 @@ const SearchNews = ({ onAddToJournal }) => {
 
   // === Изменение поискового поля ===
   const handleInputChange = (e) => {
-    const value = e.target.value;
-    setQuery(value);
-    setCurrentPage(1);
-    setHasMore(true);
+  const value = e.target.value;
+  setQuery(value);
+  setCurrentPage(1);
+  setHasMore(true);
 
-    if (!value.trim()) {
-      setResults([]);
-      setTotalResults(0);
-      setHasMore(false);
-      return;
-    }
+  if (!value.trim()) {
+    setResults([]);
+    setTotalResults(0);
+    setHasMore(false); // ← добавлено
+    return;
+  }
 
-    const timer = setTimeout(() => {
-      fetchPage(value, 1);
-    }, 1000);
+  const timer = setTimeout(() => {
+    fetchPage(value, 1);
+  }, 1000);
 
-    return () => clearTimeout(timer);
-  };
+  return () => clearTimeout(timer);
+};
 
   // === Сохранение в журнал ===
   const handleAddToJournal = async (newsItem) => {
@@ -175,7 +175,7 @@ const SearchNews = ({ onAddToJournal }) => {
       {/* Кнопка дозагрузки */}
       <div className="load-more-container">
         {isSearching && <span className="loading-text">Загрузка...</span>}
-        {!isSearching && hasMore && (
+        {!isSearching && hasMore && query && results.length > 0 && (
           <button className="load-more-button" onClick={loadMore}>
             Показать ещё
           </button>

@@ -398,3 +398,14 @@
 .load-more-button:hover {
   background-color: #0056b3;
 }
+
+.load-more-container button {
+  margin-top: 20px;
+}
+
+.no-more-results {
+  text-align: center;
+  font-style: italic;
+  color: #666;
+  margin-top: 1rem;
+}
