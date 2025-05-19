@@ -228,10 +228,15 @@ const AllNewsPage = () => {
               )}
               <div className="news-content">
                 <h3>{article.title}</h3>
+
+                {/* Описание */}
+                <p className="news-description">
+                  {article.description || 'Описание отсутствует'}
+                </p>
+
                 <p className="published-at">{formatDate(article.publishedAt)}</p>
-                <a href={article.url} target="_blank" rel="noopener noreferrer" className="read-more">
-                  Читать далее
-                </a>
+
+                {/* Контейнер для категорий и тегов */}
                 <div className="categories">
                   {article.categories.map(cat => (
                     <span key={cat} className="category-tag">
@@ -239,7 +244,6 @@ const AllNewsPage = () => {
                     </span>
                   ))}
                 </div>
-                {/* Хештеги */}
                 <div className="card-tags">
                   {article.tags.map(tag => (
                     <span
@@ -251,9 +255,20 @@ const AllNewsPage = () => {
                     </span>
                   ))}
                 </div>
-                {/* Кнопка "Сохранить" */}
+              </div>
+
+              {/* Блок с кнопками внизу карточки */}
+              <div className="news-actions">
+                <a
+                  href={article.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="action-button read-more-button"
+                >
+                  Читать далее
+                </a>
                 <button
-                  className="save-to-journal-button"
+                  className="action-button save-to-journal-button"
                   onClick={() => handleAddToJournal(article)}
                 >
                   Сохранить
