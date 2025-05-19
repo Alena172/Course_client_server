@@ -1,176 +1,189 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import './AllNewsPage.css';
 import API from '../api';
-import './NewsFeed.css';
 
-const SearchNews = ({ onAddToJournal, extractKeywords, categorizeContent, onResultsChange }) => {
+const SearchNews = ({ onAddToJournal }) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [totalResults, setTotalResults] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
-  const [timeoutId, setTimeoutId] = useState(null);
-  const [lastPublishedAt, setLastPublishedAt] = useState(null);
-  const [hasMore, setHasMore] = useState(false);
-  const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
 
-  const handleSearch = useCallback(async (searchQuery, loadMore = false) => {
+  // === Поиск ===
+  const fetchPage = useCallback(async (searchQuery, pageNumber, append = false) => {
     if (!searchQuery.trim()) return;
 
     setIsSearching(true);
     try {
-      const params = {
-        q: searchQuery,
-        pageSize: 10,
-      };
+      const response = await API.get('/api/news/strict-search', {
+        params: {
+          q: searchQuery,
+          page: pageNumber,
+          maxPerPage: 10
+        }
+      });
 
-      if (loadMore && lastPublishedAt) {
-        params.after = lastPublishedAt;
-      }
+      const allArticles = response.data.articles || [];
+      const total = response.data.totalResults || allArticles.length;
+      const pages = response.data.totalPages || Math.ceil(total / 10);
 
-      const response = await API.get('/api/news/search', { params });
-
-      const data = response.data;
-      const articles = data.articles || [];
-      const total = data.totalResults || 0;
-
-      if (loadMore) {
-        setResults(prev => [...prev, ...articles]);
+      if (append) {
+        setResults(prev => [...prev, ...allArticles]);
       } else {
-        setResults(articles);
+        setResults(allArticles);
         setTotalResults(total);
-        setInitialLoadDone(true);
       }
 
-      // Обновляем курсор для пагинации
-      if (articles.length > 0) {
-        const newLastPublishedAt = articles[articles.length - 1].publishedAt;
-        setLastPublishedAt(newLastPublishedAt);
-        // Проверяем, есть ли еще статьи (если получено меньше запрошенного, значит это конец)
-        setHasMore(articles.length >= params.pageSize);
-      } else {
-        setHasMore(false);
-      }
+      setCurrentPage(pageNumber);
+      setHasMore(response.data.currentPage < response.data.totalPages);
 
-      if (onResultsChange) {
-        onResultsChange({
-          results: loadMore ? [...results, ...articles] : articles,
-          totalResults: total,
-          isSearching: true,
-        });
-      }
-    } catch (error) {
-      console.error('Search error:', error);
-      if (!loadMore) {
+    } catch (err) {
+      console.error('Ошибка поиска:', err.message);
+      if (!append) {
         setResults([]);
         setTotalResults(0);
-        if (onResultsChange) {
-          onResultsChange({ results: [], totalResults: 0, isSearching: false });
-        }
+        setHasMore(false);
       }
-      // В случае ошибки при загрузке дополнительных данных, оставляем hasMore как есть
     } finally {
       setIsSearching(false);
     }
-  }, [lastPublishedAt, results, onResultsChange]);
+  }, []);
 
-  const handleLoadMore = () => {
-    if (!isSearching && hasMore) {
-      handleSearch(query, true);
-    }
+  // === Подгрузка следующей страницы ===
+  const loadMore = () => {
+    if (!hasMore || isSearching) return;
+    fetchPage(query, currentPage + 1, true);
   };
 
+  // === Изменение поискового поля ===
   const handleInputChange = (e) => {
     const value = e.target.value;
     setQuery(value);
-    setLastPublishedAt(null); // Сбрасываем курсор при новом поиске
-    setInitialLoadDone(false);
-    setHasMore(false);
+    setCurrentPage(1);
+    setHasMore(true);
 
-    if (timeoutId) clearTimeout(timeoutId);
-
-    if (value.length > 2) {
-      const id = setTimeout(() => {
-        handleSearch(value);
-      }, 2000);
-      setTimeoutId(id);
-    } else {
+    if (!value.trim()) {
       setResults([]);
       setTotalResults(0);
-      if (onResultsChange) {
-        onResultsChange({ results: [], totalResults: 0, isSearching: false });
+      setHasMore(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      fetchPage(value, 1);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  };
+
+  // === Сохранение в журнал ===
+  const handleAddToJournal = async (newsItem) => {
+    const userId = localStorage.getItem('userId');
+    const token = localStorage.getItem('token');
+
+    if (!userId || !token) {
+      alert('Авторизуйтесь для добавления в журнал');
+      return;
+    }
+
+    try {
+      await API.post('/api/news/journal', {
+        ...newsItem,
+        userId
+      }, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      alert('Статья сохранена в журнале');
+    } catch (err) {
+      if (err.response?.status === 409) {
+        alert('Эта статья уже в вашем журнале');
+      } else {
+        console.error('Ошибка при сохранении:', err.message);
+        alert('Не удалось сохранить статью');
       }
     }
   };
 
-  useEffect(() => {
-    return () => {
-      if (timeoutId) clearTimeout(timeoutId);
-    };
-  }, [timeoutId]);
-
   return (
-    <div className="news-feed">
-      <div className="news-feed-header">
-        <h2 className="news-feed-title">Новостная лента</h2>
-        <div className="search-container">
-          <input
-            type="text"
-            placeholder="Поиск новостей..."
-            value={query}
-            onChange={handleInputChange}
-            className="search-input"
-          />
-          {isSearching && !initialLoadDone && <div className="search-spinner">Загрузка...</div>}
-        </div>
+    <div className="all-news-page">
+      <h2>Поиск новостей</h2>
+
+      {/* Поле поиска */}
+      <div className="filters">
+        <input
+          type="text"
+          placeholder="Например: AI, спорт, климат"
+          value={query}
+          onChange={handleInputChange}
+          className="search-input"
+        />
       </div>
 
-      {results.length > 0 && (
-        <div className="search-results-section">
-          <h3 className="search-results-title">
-            Результаты поиска по запросу: "{query}" ({totalResults} найдено)
-          </h3>
-          <div className="news-grid">
-            {results.map((newsItem, index) => (
-              <article key={`search-${index}`} className="news-card">
-                <div className="image-container">
-                  <img
-                    src={newsItem.image || 'https://via.placeholder.com/300x200?text=No+Image'}
-                    alt={newsItem.title || 'Новость без заголовка'}
-                    className="news-image"
-                  />
-                </div>
-                <div className="card-content">
-                  <h3 className="news-title">{newsItem.title}</h3>
-                  <p className="news-description">{newsItem.description}</p>
-                  <div className="card-footer">
-                    <a href={newsItem.url} target="_blank" rel="noopener noreferrer" className="read-more">
-                      Читать полностью
-                    </a>
-                    <button onClick={() => onAddToJournal(newsItem)} className="add-button">
-                      Сохранить
-                    </button>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
-          {hasMore && (
-            <div className="load-more-container">
-              <button 
-                onClick={handleLoadMore}
-                disabled={isSearching}
-                className="load-more-button"
+      {/* Сообщения */}
+      {isSearching && <span className="loading-text">Идёт поиск...</span>}
+      {!isSearching && results.length === 0 && query && <p>Ничего не найдено</p>}
+
+      {/* Список новостей */}
+      <div className="news-grid">
+        {results.map((article, index) => (
+          <div key={`search-${index}`} className="news-card">
+            {article.imageUrl && (
+              <div className="news-image">
+                <img src={article.imageUrl} alt={article.title} />
+              </div>
+            )}
+            <div className="news-content">
+              <h3>{article.title}</h3>
+              <p className="published-at">{new Date(article.publishedAt).toLocaleDateString()}</p>
+              <a href={article.url} target="_blank" rel="noopener noreferrer" className="read-more">
+                Читать далее
+              </a>
+              <div className="categories">
+                {article.categories.map(cat => (
+                  <span key={cat} className="category-tag">
+                    {cat}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Кнопки действий внизу карточки */}
+            <div className="news-actions">
+              <a
+                href={article.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="action-button read-more-button"
               >
-                {isSearching ? 'Загрузка...' : 'Загрузить еще'}
+                Читать далее
+              </a>
+              <button
+                className="action-button save-to-journal-button"
+                onClick={() => handleAddToJournal(article)}
+              >
+                Сохранить
               </button>
             </div>
-          )}
-          {!hasMore && initialLoadDone && results.length > 0 && (
-            <div className="no-more-results">
-              Показаны все результаты по вашему запросу
-            </div>
-          )}
-        </div>
-      )}
+          </div>
+        ))}
+      </div>
+
+      {/* Кнопка дозагрузки */}
+      <div className="load-more-container">
+        {isSearching && <span className="loading-text">Загрузка...</span>}
+        {!isSearching && hasMore && (
+          <button className="load-more-button" onClick={loadMore}>
+            Показать ещё
+          </button>
+        )}
+        {!hasMore && results.length > 0 && (
+          <p className="no-more-results">Все результаты загружены</p>
+        )}
+      </div>
     </div>
   );
 };

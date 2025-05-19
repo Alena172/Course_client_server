@@ -1,197 +1,160 @@
 import React, { useState, useEffect } from 'react';
+import './AllNewsPage.css';
 import API from '../api';
-import { getSafeImageUrl } from '../utils/imageUtils';
-import './NewsFeed.css';
 
-const Recommendations = ({ onAddToJournal }) => {
+const formatDate = (dateString) => {
+  const options = { year: 'numeric', month: 'long', day: 'numeric' };
+  return new Date(dateString).toLocaleDateString('ru-RU', options);
+};
+
+const Recommendations = () => {
   const [recommendations, setRecommendations] = useState([]);
-  const [journalEntries, setJournalEntries] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [recPageSize] = useState(12);
-  const [refreshSeed, setRefreshSeed] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
 
-  // Функция для генерации случайных тем (на основе журнала или фоллбэка)
-  const generateRandomQuery = (journalData) => {
-    if (!Array.isArray(journalData) || journalData.length === 0) {
-      return getFallbackQuery();
-    }
+  const fetchPage = async (pageNumber, append = false) => {
+    setLoading(true);
+    setError('');
 
-    const fallbackTopics = [
-      'technology',
-      'business',
-      'science',
-      'politics',
-      'sports',
-      'entertainment',
-      'health'
-    ];
-
-    const randomIndex = Math.floor(Math.random() * fallbackTopics.length);
-    return fallbackTopics[randomIndex];
-  };
-
-  const getFallbackQuery = () => {
-    const fallbackTopics = [
-      'technology',
-      'business',
-      'science',
-      'politics',
-      'sports',
-      'entertainment',
-      'health'
-    ];
-    const randomIndex = Math.floor(Math.random() * fallbackTopics.length);
-    return fallbackTopics[randomIndex];
-  };
-
-  const fetchRecommendations = async () => {
     try {
       const userId = localStorage.getItem('userId');
-      if (!userId) return;
+      if (!userId) throw new Error('Пользователь не авторизован');
 
-      setLoading(true);
-      setError('');
-
-      // Получаем журнал пользователя
-      const journalResponse = await API.get(`/api/news/${userId}/journal`);
-      setJournalEntries(journalResponse.data);
-
-      // Генерируем запрос на основе данных из журнала
-      const query = generateRandomQuery(journalResponse.data);
-
-      // Получаем рекомендации
       const response = await API.get(`/api/news/recommendations/${userId}`, {
         params: {
-          limit: recPageSize,
-          query: query,
-          seed: refreshSeed // <-- Это должно быть числом или строкой
+          page: pageNumber,
+          maxPerPage: 6
         }
       });
 
-      if (response.data?.recommendations) {
-        setRecommendations(response.data.recommendations);
+      const results = response.data.recommendations || [];
+
+      if (append) {
+        setRecommendations(prev => [...prev, ...results]);
+      } else {
+        setRecommendations(results);
       }
+
+      setCurrentPage(pageNumber);
+      setHasMore(response.data.currentPage < response.data.totalPages);
+
     } catch (err) {
-      console.error('Ошибка загрузки рекомендаций:', err);
+      console.error('Ошибка загрузки рекомендаций:', err.message);
       setError('Не удалось загрузить рекомендации');
     } finally {
       setLoading(false);
     }
   };
 
-  const refreshRecommendations = () => {
-    setRefreshSeed(Date.now()); // Меняем seed для нового запроса
+  useEffect(() => {
+    fetchPage(1);
+  }, []);
+
+  const loadMore = () => {
+    if (!hasMore) return;
+    fetchPage(currentPage + 1, true);
   };
 
   const handleAddToJournal = async (newsItem) => {
+    const token = localStorage.getItem('token');
+    const userId = localStorage.getItem('userId');
+
+    if (!userId || !token) {
+      alert('Авторизуйтесь для добавления в журнал');
+      return;
+    }
+
     try {
-      const userId = localStorage.getItem('userId');
-      const token = localStorage.getItem('token');
-
-      if (!userId || !token) {
-        alert('Для добавления в журнал необходимо авторизоваться');
-        return;
-      }
-
-      const entryData = {
-        userId,
-        url: newsItem.url,
-        source: newsItem.source?.name || 'unknown',
-        title: newsItem.title || '',
-        description: newsItem.description || '',
-        content: newsItem.content || newsItem.description || '',
-        imageUrl: newsItem.urlToImage || newsItem.imageUrl || '',
-        publishedAt: newsItem.publishedAt || new Date().toISOString(),
-        author: newsItem.author || ''
-      };
-
-      await API.post('/api/news/journal', entryData, {
+      await API.post('/api/news/journal', {
+        ...newsItem,
+        userId
+      }, {
         headers: {
           Authorization: `Bearer ${token}`
         }
       });
 
-      alert('Новость успешно добавлена в журнал');
-      if (onAddToJournal) onAddToJournal();
-      fetchRecommendations(); // Обновляем рекомендации
+      alert('Статья сохранена в вашем журнале');
     } catch (err) {
-      console.error('Ошибка добавления:', err);
-      alert(err.response?.data?.message || 'Ошибка при добавлении в журнал');
+      if (err.response?.status === 409) {
+        alert('Эта новость уже в вашем журнале');
+      } else {
+        console.error('Ошибка при сохранении:', err.message);
+        alert('Не удалось сохранить статью');
+      }
     }
   };
 
-  const handleRecImageError = (index) => {
-    setRecommendations((prevRecs) => prevRecs.filter((_, i) => i !== index));
-  };
-
-  useEffect(() => {
-    fetchRecommendations();
-  }, [refreshSeed]);
-
   return (
-    <div className="recommendations-section">
-      <div className="recommendations-header">
-        <h2 className="recommendations-title">
-          Рекомендуем вам
-          {loading && <span className="loading-indicator"> (загрузка...)</span>}
-        </h2>
-        <button
-          onClick={refreshRecommendations}
-          className="refresh-button"
-          disabled={loading}
-        >
-          Показать другие
-        </button>
-      </div>
+    <div className="all-news-page">
+      <h1>Рекомендуем вам</h1>
 
-      {error ? (
-        <p className="error-message">{error}</p>
-      ) : !loading && recommendations.length === 0 ? (
-        <p className="no-recs">
-          {journalEntries.length > 0
-            ? 'Не удалось найти рекомендации. Попробуйте добавить больше новостей.'
-            : 'Добавьте новости в журнал, чтобы получить рекомендации'}
-        </p>
-      ) : (
-        <div className="recommendations-grid">
-          {recommendations.map((item, index) => (
-            <article key={`rec-${index}-${refreshSeed}`} className="recommendation-card">
-              {item.imageUrl && (
-                <div className="image-container">
-                  <img
-                    src={getSafeImageUrl(item.imageUrl)}
-                    alt={item.title}
-                    onError={() => handleRecImageError(index)}
-                  />
+      {/* Сообщения */}
+      {loading && <span className="loading-text">Загрузка...</span>}
+      {error && <p className="error-message">{error}</p>}
+
+      {/* Список рекомендаций */}
+      <div className="news-grid">
+        {recommendations.length > 0 ? (
+          recommendations.map((article, index) => (
+            <div key={`rec-${index}`} className="news-card">
+              {article.imageUrl && (
+                <div className="news-image">
+                  <img src={article.imageUrl} alt={article.title} />
                 </div>
               )}
-              <div className="rec-content">
-                <h3 className="rec-title">{item.title}</h3>
-                <p className="rec-description">{item.description}</p>
-                <div className="rec-footer">
-                  <a
-                    href={item.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="rec-link"
-                  >
-                    Читать
-                  </a>
-                  <div className="rec-actions">
-                    <button
-                      onClick={() => handleAddToJournal(item)}
-                      className="rec-add-button"
-                    >
-                      Сохранить
-                    </button>
-                  </div>
+              <div className="news-content">
+                <h3>{article.title}</h3>
+                <p className="published-at">{formatDate(article.publishedAt)}</p>
+                <a href={article.url} target="_blank" rel="noopener noreferrer" className="read-more">
+                  Читать далее
+                </a>
+                <div className="categories">
+                  {article.categories.map(cat => (
+                    <span key={cat} className="category-tag">
+                      {cat}
+                    </span>
+                  ))}
                 </div>
               </div>
-            </article>
-          ))}
-        </div>
-      )}
+
+              {/* Кнопки действий внизу карточки */}
+              <div className="news-actions">
+                <a
+                  href={article.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="action-button read-more-button"
+                >
+                  Читать далее
+                </a>
+                <button
+                  className="action-button save-to-journal-button"
+                  onClick={() => handleAddToJournal(article)}
+                >
+                  Сохранить
+                </button>
+              </div>
+            </div>
+          ))
+        ) : (
+          <p className="no-results">
+            {loading ? 'Загрузка...' : error ? 'Нет рекомендаций' : 'Добавьте статьи в журнал'}
+          </p>
+        )}
+      </div>
+
+      {/* Кнопка дозагрузки */}
+      <div className="load-more-container">
+        {loading && <span className="loading-text">Загрузка...</span>}
+        {!loading && hasMore && (
+          <button className="load-more-button" onClick={loadMore}>
+            Показать другие
+          </button>
+        )}
+      </div>
     </div>
   );
 };

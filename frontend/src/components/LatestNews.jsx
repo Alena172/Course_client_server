@@ -1,165 +1,157 @@
 import React, { useState, useEffect } from 'react';
+import './AllNewsPage.css';
 import API from '../api';
-import { getSafeImageUrl } from '../utils/imageUtils';
-import './NewsFeed.css';
 
 const LatestNews = ({ onAddToJournal }) => {
   const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [hasMore, setHasMore] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
 
-  const extractKeywords = (title = '', description = '') => {
-    const text = `${title} ${description}`.toLowerCase();
-    const stopWords = new Set(['the', 'and', 'for', 'with', 'this', 'that', 'are', 'was']);
-    
-    const words = text.split(/\W+/)
-      .filter(word => word.length > 3 && !stopWords.has(word));
-    
-    const keywordFrequency = {};
-    words.forEach(word => {
-      keywordFrequency[word] = (keywordFrequency[word] || 0) + 1;
-    });
-    
-    return {
-      keywords: Object.keys(keywordFrequency)
-        .sort((a, b) => keywordFrequency[b] - keywordFrequency[a])
-        .slice(0, 5)
-    };
-  };
-
-  const categorizeContent = (title = '', description = '') => {
-    const text = `${title} ${description}`.toLowerCase();
-    const categories = [];
-    
-    if (/(tech|ai|robot|computer|software)/.test(text)) categories.push('technology');
-    if (/(business|market|economy|stock)/.test(text)) categories.push('business');
-    if (/(science|research|space|medicine)/.test(text)) categories.push('science');
-    if (/(politics|government|election)/.test(text)) categories.push('politics');
-    if (/(sport|football|basketball)/.test(text)) categories.push('sports');
-    if (/(game|gaming|esports|videogame|playstation|xbox|nintendo|steam|pc game)/.test(text)) categories.push('games');
-    
-    return categories.length > 0 ? categories : ['general'];
-  };
-
-  const fetchNews = async () => {
+  // Загрузка новостей с сервера
+  const fetchNews = async (pageNumber, append = false) => {
     try {
       setLoading(true);
       setError('');
-      
-      const response = await API.get('/api/news/proxy/newsapi', {
+
+      const response = await API.get('/api/news/all', {
         params: {
-          endpoint: 'top-headlines',
-          country: 'us'
+          page: pageNumber,
+          maxPerPage: 6
         }
       });
-      
-      setNews(response.data.articles || []);
+
+      const results = response.data.articles || [];
+
+      if (append) {
+        setNews(prev => [...prev, ...results]);
+      } else {
+        setNews(results);
+      }
+
+      setCurrentPage(pageNumber);
+      setHasMore(response.data.currentPage < response.data.totalPages);
+
     } catch (err) {
-      console.error('Ошибка при загрузке новостей:', err);
+      console.error('Ошибка при получении последних новостей:', err.message);
       setError('Не удалось загрузить последние новости');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleImageError = (index) => {
-    setNews(prevNews => prevNews.filter((_, i) => i !== index));
+  // Подгрузка следующей страницы
+  const loadMore = () => {
+    if (!hasMore) return;
+    fetchNews(currentPage + 1, true);
   };
 
-  const handleAddToJournalInternal = async (newsItem) => {
+  // --- Сохранение в журнал ---
+  const handleAddToJournal = async (newsItem) => {
+    const userId = localStorage.getItem('userId');
+    const token = localStorage.getItem('token');
+
+    if (!userId || !token) {
+      alert('Авторизуйтесь для добавления в журнал');
+      return;
+    }
+
     try {
-      const userId = localStorage.getItem('userId');
-      const token = localStorage.getItem('token');
-      if (!userId || !token) {
-        alert('Для добавления в журнал необходимо авторизоваться');
-        return;
-      }
-      
-      const { keywords } = extractKeywords(newsItem.title, newsItem.description);
-      const categories = categorizeContent(newsItem.title, newsItem.description);
-      
-      const entryData = {
-        userId,
-        url: newsItem.url,
-        source: newsItem.source?.name || 'unknown',
-        title: newsItem.title || '',
-        description: newsItem.description || '',
-        content: newsItem.content || newsItem.description || '',
-        imageUrl: newsItem.urlToImage || '',
-        publishedAt: newsItem.publishedAt || new Date().toISOString(),
-        author: newsItem.author || '',
-        keywords,
-        categories
-      };
-      
-      await API.post('/api/news/journal', entryData, {
+      const response = await API.post('/api/news/journal', {
+        ...newsItem,
+        userId
+      }, {
         headers: {
           Authorization: `Bearer ${token}`
         }
       });
-      
-      alert('Новость успешно добавлена в журнал');
+
+      alert('Статья сохранена в вашем журнале');
       if (onAddToJournal) onAddToJournal();
     } catch (err) {
-      console.error('Ошибка добавления:', err);
-      alert(err.response?.data?.message || 'Ошибка при добавлении в журнал');
+      if (err.response?.status === 409) {
+        alert('Эта новость уже в вашем журнале');
+      } else {
+        console.error('Ошибка при сохранении:', err.message);
+        alert('Не удалось сохранить статью');
+      }
     }
   };
 
+  // Первичная загрузка
   useEffect(() => {
-    fetchNews();
+    fetchNews(1);
   }, []);
 
   return (
-    <div className="latest-news-section">
-      <h2 className="latest-news-title">Последние новости</h2>
-      
-      {error ? (
-        <p className="error-message">{error}</p>
-      ) : loading ? (
-        <p className="loading-message">Загрузка новостей...</p>
-      ) : news.length === 0 ? (
-        <p className="no-news">Нет доступных новостей</p>
-      ) : (
-        <div className="news-grid">
-          {news.map((newsItem, index) => (
-            <article key={`${newsItem.source?.id || index}-${index}`} className="news-card">
-              {newsItem.urlToImage && (
-                <div className="image-container">
-                  <img 
-                    src={getSafeImageUrl(newsItem.urlToImage)} 
-                    alt={newsItem.title}
-                    className="news-image"
-                    onError={() => handleImageError(index)}
-                  />
+    <div className="all-news-page">
+      <h1>Последние новости</h1>
+
+      {/* Сообщения */}
+      {loading && <span className="loading-text">Загрузка...</span>}
+      {error && <p className="error-message">{error}</p>}
+
+      {/* Список новостей */}
+      <div className="news-grid">
+        {news.length > 0 ? (
+          news.map((article, index) => (
+            <div key={`news-${index}`} className="news-card">
+              {article.imageUrl && (
+                <div className="news-image">
+                  <img src={article.imageUrl} alt={article.title} />
                 </div>
               )}
-              <div className="card-content">
-                <h3 className="news-title">{newsItem.title}</h3>
-                <p className="news-description">{newsItem.description}</p>
-                <div className="card-footer">
-                  <a 
-                    href={newsItem.url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="read-more"
-                  >
-                    Читать полностью
-                  </a>
-                  <div className="action-buttons">
-                    <button 
-                      onClick={() => handleAddToJournalInternal(newsItem)}
-                      className="add-button"
-                    >
-                      Сохранить
-                    </button>
-                  </div>
+              <div className="news-content">
+                <h3>{article.title}</h3>
+                <p className="published-at">{new Date(article.publishedAt).toLocaleDateString()}</p>
+                <a href={article.url} target="_blank" rel="noopener noreferrer" className="read-more">
+                  Читать далее
+                </a>
+                <div className="categories">
+                  {article.categories.map(cat => (
+                    <span key={cat} className="category-tag">
+                      {cat}
+                    </span>
+                  ))}
                 </div>
               </div>
-            </article>
-          ))}
-        </div>
-      )}
+
+              {/* Кнопки действий внизу карточки */}
+              <div className="news-actions">
+                <a
+                  href={article.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="action-button read-more-button"
+                >
+                  Читать далее
+                </a>
+                <button
+                  className="action-button save-to-journal-button"
+                  onClick={() => handleAddToJournal(article)}
+                >
+                  Сохранить
+                </button>
+              </div>
+            </div>
+          ))
+        ) : (
+          <p className="no-results">
+            {loading ? 'Загрузка...' : error ? 'Нет новостей' : 'Новостей не найдено'}
+          </p>
+        )}
+      </div>
+
+      {/* Кнопка дозагрузки */}
+      <div className="load-more-container">
+        {loading && <span className="loading-text">Загрузка...</span>}
+        {!loading && hasMore && (
+          <button className="load-more-button" onClick={loadMore}>
+            Показать ещё
+          </button>
+        )}
+      </div>
     </div>
   );
 };
