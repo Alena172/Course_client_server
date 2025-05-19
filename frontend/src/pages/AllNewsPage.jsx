@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import './AllNewsPage.css';
 import API from '../api';
 import DatePicker from 'react-datepicker';
@@ -23,14 +22,6 @@ const formatDate = (dateString) => {
   return new Date(dateString).toLocaleDateString('ru-RU', options);
 };
 
-// Функция для извлечения ключевых слов
-const extractKeywords = (text) => {
-  if (!text) return [];
-  const words = text.toLowerCase().match(/\b\w{4,}\b/g) || [];
-  const stopWords = ['the', 'and', 'in', 'of', 'to', 'a', 'an', 'is', 'on'];
-  return [...new Set(words.filter(w => !stopWords.includes(w)))].slice(0, 5); // до 5 уникальных слов
-};
-
 const AllNewsPage = () => {
   const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -43,50 +34,64 @@ const AllNewsPage = () => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
 
+  // --- Функция сохранения в журнал ---
+  const handleAddToJournal = async (newsItem) => {
+    const userId = localStorage.getItem('userId');
+    const token = localStorage.getItem('token');
+
+    if (!userId || !token) {
+      alert('Авторизуйтесь для добавления в журнал');
+      return;
+    }
+
+    try {
+      const response = await API.post('/api/news/journal', {
+        ...newsItem,
+        userId
+      }, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      alert('Статья сохранена в вашем журнале');
+      console.log('Сохранено:', response.data.entry);
+    } catch (err) {
+      if (err.response?.status === 409) {
+        alert('Эта статья уже в вашем журнале');
+      } else {
+        console.error('Ошибка при сохранении:', err.message);
+        alert('Не удалось сохранить статью');
+      }
+    }
+  };
+
   // Загрузка новостей
   const fetchNews = async (pageNumber, append = false) => {
     setLoading(true);
     try {
       const params = {
-        token: process.env.REACT_APP_GUARDIAN_API_KEY,
-        'page-size': 6,
-        'page': pageNumber
+        page: pageNumber,
+        maxPerPage: 6
       };
 
-      if (filters.category) params.section = filters.category;
-      if (filters.fromDate) params['from-date'] = filters.fromDate.toISOString().split('T')[0];
-      if (filters.toDate) params['to-date'] = filters.toDate.toISOString().split('T')[0];
+      if (filters.category) params.category = filters.category;
+      if (filters.fromDate) params.from = filters.fromDate.toISOString().split('T')[0];
+      if (filters.toDate) params.to = filters.toDate.toISOString().split('T')[0];
       if (filters.selectedTags.length > 0) params.q = filters.selectedTags.join(' OR ');
 
-      // Внутри fetchNews:
-        const endpoint = filters.selectedTags.length > 0 ? '/api/news/search' : '/api/news/all';
+      const endpoint = filters.selectedTags.length > 0 ? '/api/news/search' : '/api/news/all';
 
-        const response = await API.get(endpoint, {
-        params: {
-            category: filters.category || undefined,
-            from: filters.fromDate ? new Date(filters.fromDate).toISOString().split('T')[0] : undefined,
-            to: filters.toDate ? new Date(filters.toDate).toISOString().split('T')[0] : undefined,
-            q: filters.selectedTags.length > 0 ? filters.selectedTags.join(' OR ') : undefined,
-            page: pageNumber,
-            maxPerPage: 6
-        }
-        });
+      const response = await API.get(endpoint, {
+        params
+      });
 
       const results = response.data.articles || [];
 
-      const formattedResults = results.map(article => ({
-        title: article.title,
-        url: article.url,
-        publishedAt: article.publishedAt,
-        categories: article.categories || ['other'],
-        tags: extractKeywords(article.title + ' ' + (article.description || '')),
-        imageUrl: article.imageUrl || null
-      }));
-
       if (append) {
-        setNews(prev => [...prev, ...formattedResults]);
+        setNews(prev => [...prev, ...results]);
       } else {
-        setNews(formattedResults);
+        setNews(results);
       }
 
       const totalPages = Math.ceil(response.data.totalResults / 6);
@@ -234,7 +239,7 @@ const AllNewsPage = () => {
                     </span>
                   ))}
                 </div>
-                {/* Хештеги на карточке */}
+                {/* Хештеги */}
                 <div className="card-tags">
                   {article.tags.map(tag => (
                     <span
@@ -246,6 +251,13 @@ const AllNewsPage = () => {
                     </span>
                   ))}
                 </div>
+                {/* Кнопка "Сохранить" */}
+                <button
+                  className="save-to-journal-button"
+                  onClick={() => handleAddToJournal(article)}
+                >
+                  Сохранить
+                </button>
               </div>
             </div>
           ))

@@ -3,21 +3,73 @@ const User = require('../models/User'); // Модель User
 const axios = require('axios'); 
 const mongoose = require('mongoose');
  
-exports.deleteNews = async (req, res) => {
-  const { id } = req.params;
 
-  try {
-    await News.findByIdAndDelete(id);
-    res.json({ message: 'Новость удалена' });
-  } catch (err) {
-    res.status(500).json({ message: 'Ошибка при удалении' });
-  }
-};
-
-const puppeteer = require('puppeteer');
+const fetch = require('node-fetch');
+const cheerio = require('cheerio');
 const natural = require('natural');
 const tokenizer = new natural.WordTokenizer();
 const stopword = require('stopword'); // имя переменной лучше не менять
+
+/**
+ * Вычисляет "релевантность" статьи к поисковому запросу
+ * @param {string} text - полный текст статьи или заголовок
+ * @param {string[]} keywords - список слов из запроса
+ * @returns {number} оценка релевантности (чем больше — тем лучше)
+ */
+function calculateRelevance(text, keywords) {
+  if (!text || !keywords.length) return 0;
+
+  const lowerText = text.toLowerCase();
+  let score = 0;
+
+  for (const word of keywords) {
+    const regex = new RegExp(`\\b${word}\\b`, 'gi');
+    const matches = lowerText.match(regex);
+    const count = matches ? matches.length : 0;
+
+    // Учитываем близость слов друг к другу
+    const indices = [];
+    let match;
+    while ((match = regex.exec(lowerText)) !== null) {
+      indices.push(match.index);
+    }
+
+    // Базовый бонус за наличие слова
+    score += count * 10;
+
+    // Если есть несколько слов рядом — добавляем бонус
+    for (let i = 0; i < indices.length - 1; i++) {
+      const distance = indices[i + 1] - indices[i];
+      if (distance < 50) {
+        score += 15; // слова рядом — это хорошо
+      } else if (distance < 150) {
+        score += 5;
+      }
+    }
+  }
+
+  return score;
+}
+
+/**
+ * Сортирует статьи по релевантности
+ * @param {Array} articles - массив статей
+ * @param {string} query - пользовательский запрос
+ * @returns {Array} отсортированный массив статей
+ */
+function rankArticlesByRelevance(articles, query) {
+  const keywords = tokenizer.tokenize(query.toLowerCase());
+
+  return articles
+    .map(article => {
+      const fullText = article.description + ' ' + article.title + ' ' + (article.tags.join(' ') || '');
+      const relevance = calculateRelevance(fullText, keywords);
+      return { ...article, relevance };
+    })
+    .filter(article => article.relevance > 0)
+    .sort((a, b) => b.relevance - a.relevance);
+}
+
 
 /**
  * Извлекает ключевые слова из текста статьи
@@ -25,24 +77,73 @@ const stopword = require('stopword'); // имя переменной лучше 
  * @returns {string[]} список тегов
  */
 function extractKeywords(text) {
-  const safeText = (text || '').toLowerCase();
-  const words = tokenizer.tokenize(safeText);
+  if (!text) return [];
 
-  const noStopWords = stopword.removeStopwords(words); // Удаляем стоп-слова
+  const words = text.toLowerCase().match(/\b[a-z]{4,}\b/g);
+  if (!words) return [];
 
-  const filtered = noStopWords.filter(word => {
-    return (
-      word.length > 3 &&
-      /^[a-z]+$/i.test(word)
-    );
-  });
-
+  const filtered = stopword.removeStopwords(words).filter(word => /^[a-z]+$/i.test(word));
   const unique = [...new Set(filtered)];
+
   return unique.slice(0, 5);
 }
 
+// === Параллельная обработка одной статьи через node-fetch и cheerio ===
+async function processArticle(article) {
+  try {
+    const response = await fetch(article.webUrl, { timeout: 10000 });
+    const html = await response.text();
+    const $ = cheerio.load(html);
 
+    // Получаем главное изображение
+    const imageUrl = $('img').first().attr('src') ||
+                     $('.article-body img').first().attr('src') ||
+                     null;
 
+    // Парсим текст статьи
+    const fullText = $('.article-body__content')
+      .text()
+      .trim() || $('.article__container')
+      .text()
+      .trim() || $('article')
+      .text()
+      .trim() || $('body')
+      .text()
+      .slice(0, 2000)
+      .trim();
+
+    // Обрезаем до 200 символов
+    const shortDescription = fullText.replace(/\s+/g, ' ').slice(0, 200);
+
+    // Извлекаем теги из заголовка + текста
+    const keywords = extractKeywords(article.webTitle + ' ' + fullText);
+
+    return {
+      title: article.webTitle,
+      description: shortDescription || '',
+      url: article.webUrl,
+      imageUrl,
+      source: article.sectionId || 'unknown',
+      publishedAt: article.webPublicationDate,
+      categories: [article.sectionId || 'other'],
+      tags: keywords
+    };
+  } catch (err) {
+    console.error(`Ошибка парсинга ${article.webUrl}:`, err.message);
+    return {
+      title: article.webTitle,
+      description: '',
+      url: article.webUrl,
+      imageUrl: null,
+      source: article.sectionId || 'unknown',
+      publishedAt: article.webPublicationDate,
+      categories: [article.sectionId || 'other'],
+      tags: []
+    };
+  }
+}
+
+// === getAllNews без Puppeteer ===
 exports.getAllNews = async (req, res) => {
   const {
     category,
@@ -72,70 +173,20 @@ exports.getAllNews = async (req, res) => {
     console.log('Параметры для запроса к The Guardian:', params);
 
     const response = await axios.get('https://content.guardianapis.com/search ', { params });
-
     const articles = response.data.response.results;
 
-    // Парсим изображения
-    const browser = await puppeteer.launch({
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
+    // Параллелим обработку статей
+    const CONCURRENCY_LIMIT = 10; // можно попробовать 5–15
+    const batches = [];
 
-    const formattedArticles = [];
-
-    for (const article of articles) {
-      const pageInstance = await browser.newPage();
-      let imageUrl = null;
-      let fullText = '';
-
-      try {
-        await pageInstance.goto(article.webUrl, { waitUntil: 'domcontentloaded' });
-
-        // Получаем главное изображение
-        imageUrl = await pageInstance.evaluate(() => {
-          const img = document.querySelector('img') || document.querySelector('.article-body img');
-          return img ? img.src : null;
-        });
-
-        // Парсим ТОЛЬКО текст статьи — убираем мусор
-        fullText = await pageInstance.evaluate(() => {
-          const articleBody = document.querySelector('.article-body__content') ||
-                              document.querySelector('.article__container') ||
-                              document.querySelector('article') ||
-                              document.body;
-
-          return articleBody ? articleBody.innerText.trim() : '';
-        });
-
-      } catch (err) {
-        console.error(`Ошибка парсинга ${article.webUrl}:`, err.message);
-      } finally {
-        await pageInstance.close();
-      }
-
-      // Обрезаем до 200 символов
-      const shortDescription = fullText
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 200);
-
-      // Извлекаем теги
-      const keywords = extractKeywords(article.webTitle + ' ' + fullText);
-
-      formattedArticles.push({
-        title: article.webTitle,
-        description: shortDescription || '', // теперь это только текст статьи
-        url: article.webUrl,
-        imageUrl,
-        source: article.sectionId || 'unknown',
-        publishedAt: article.webPublicationDate,
-        categories: [article.sectionId || 'other'],
-        tags: keywords
-      });
+    for (let i = 0; i < articles.length; i += CONCURRENCY_LIMIT) {
+      const batch = articles.slice(i, i + CONCURRENCY_LIMIT);
+      const promises = batch.map(processArticle);
+      batches.push(...await Promise.all(promises));
     }
 
-    await browser.close();
+    const formattedArticles = batches;
 
-    // Отправляем ответ
     res.json({
       status: 'ok',
       totalResults: response.data.response.total,
@@ -150,6 +201,7 @@ exports.getAllNews = async (req, res) => {
   }
 };
 
+// === searchNewsByQuery без Puppeteer ===
 exports.searchNewsByQuery = async (req, res) => {
   const {
     q,
@@ -157,7 +209,7 @@ exports.searchNewsByQuery = async (req, res) => {
     from,
     to,
     page = 1,
-    maxPerPage = 9
+    maxPerPage = 6
   } = req.query;
 
   console.log('Параметры для поиска:', { q, category, from, to, page, maxPerPage });
@@ -185,63 +237,25 @@ exports.searchNewsByQuery = async (req, res) => {
     console.log('Параметры для Guardian Search API:', params);
 
     const response = await axios.get('https://content.guardianapis.com/search ', { params });
+    const articles = response.data.response.results || [];
 
-    const articles = response.data.response.results;
+    // Параллелим обработку статей
+    const CONCURRENCY_LIMIT = 10;
+    const batches = [];
 
-    const browser = await puppeteer.launch({
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
-
-    const formattedArticles = [];
-
-    for (const article of articles) {
-      const pageInstance = await browser.newPage();
-      let imageUrl = null;
-      let fullText = '';
-
-      try {
-        await pageInstance.goto(article.webUrl, { waitUntil: 'domcontentloaded' });
-
-        // Получаем изображение
-        imageUrl = await pageInstance.evaluate(() => {
-          const img = document.querySelector('img') || document.querySelector('.article-body img');
-          return img ? img.src : null;
-        });
-
-        // Получаем текст статьи
-        fullText = await pageInstance.evaluate(() => {
-          const body = document.body;
-          return body ? body.innerText.slice(0, 2000) : '';
-        });
-
-      } catch (err) {
-        console.error(`Ошибка парсинга ${article.webUrl}:`, err.message);
-      } finally {
-        await pageInstance.close();
-      }
-
-      // Извлекаем теги из заголовка + текста
-      const keywords = extractKeywords(article.webTitle + ' ' + fullText);
-
-      formattedArticles.push({
-        title: article.webTitle,
-        description: '',
-        url: article.webUrl,
-        imageUrl,
-        source: article.sectionId || 'unknown',
-        publishedAt: article.webPublicationDate,
-        categories: [article.sectionId || 'other'],
-        tags: keywords
-      });
+    for (let i = 0; i < articles.length; i += CONCURRENCY_LIMIT) {
+      const batch = articles.slice(i, i + CONCURRENCY_LIMIT);
+      const promises = batch.map(processArticle);
+      batches.push(...await Promise.all(promises));
     }
 
-    await browser.close();
+    const formattedArticles = batches;
 
     res.json({
       status: 'ok',
-      totalResults: response.data.response.total,
       currentPage: parseInt(page),
       totalPages: Math.ceil(response.data.response.total / maxPerPage),
+      totalResults: response.data.response.total,
       articles: formattedArticles
     });
 
@@ -349,11 +363,8 @@ function clearUserProfileCache(userId) {
   keysToDelete.forEach(key => userProfileCache.delete(key));
 }
 
-// Обновленный метод addToJournal
 exports.addToJournal = async (req, res) => {
   try {
-    console.log('Полученные данные:', JSON.stringify(req.body, null, 2));
-
     const {
       userId,
       url,
@@ -368,26 +379,31 @@ exports.addToJournal = async (req, res) => {
       categories = ['general']
     } = req.body;
 
+    // Валидация
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       return res.status(400).json({ message: 'Неверный ID пользователя' });
     }
+
     if (!url) {
       return res.status(400).json({ message: 'URL обязателен' });
     }
 
+    // Проверяем, существует ли пользователь
     const userExists = await User.exists({ _id: userId });
     if (!userExists) {
       return res.status(404).json({ message: 'Пользователь не найден' });
     }
 
+    // Проверяем, есть ли такая запись
     const existingEntry = await News.findOne({ userId, url });
     if (existingEntry) {
-      return res.status(409).json({ 
+      return res.status(409).json({
         message: 'Новость уже в журнале',
         entry: existingEntry
       });
     }
 
+    // Создаём новую запись
     const newEntry = new News({
       userId,
       url,
@@ -404,30 +420,31 @@ exports.addToJournal = async (req, res) => {
     });
 
     const savedEntry = await newEntry.save();
+
+    // Обновляем ссылки в профиле пользователя
     await User.findByIdAndUpdate(
       userId,
-      { $push: { journalEntries: savedEntry._id } }
+      { $push: { journalEntries: savedEntry._id } },
+      { new: true }
     );
 
-    // Очищаем кэш профиля пользователя
+    // Очищаем кэш (если используется)
     clearUserProfileCache(userId);
-    // Также очищаем кэш рекомендаций для этого пользователя
     clearRecommendationCache(userId);
 
-    console.log('Сохранённая запись:', JSON.stringify(savedEntry, null, 2));
     return res.status(201).json({
-      message: 'Новость успешно добавлена',
+      message: 'Новость успешно добавлена в журнал',
       entry: savedEntry
     });
 
   } catch (err) {
-    console.error('Ошибка сохранения:', {
+    console.error('Ошибка сохранения в журнал:', {
       error: err,
       receivedData: req.body
     });
-    
-    return res.status(500).json({ 
-      message: 'Ошибка сервера',
+
+    return res.status(500).json({
+      message: 'Ошибка сервера при сохранении новости',
       error: err.message
     });
   }
@@ -1206,3 +1223,16 @@ function handleRecommendationError(res, error) {
     details: process.env.NODE_ENV === 'development' ? error.message : undefined
   });
 }
+
+
+
+exports.deleteNews = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    await News.findByIdAndDelete(id);
+    res.json({ message: 'Новость удалена' });
+  } catch (err) {
+    res.status(500).json({ message: 'Ошибка при удалении' });
+  }
+};
