@@ -7,10 +7,13 @@ const {
   getUserJournal,
   deleteFromJournal,
   getRecommendations,
+  // proxyGNewsAPI,
   searchNewsByQuery,
   strictSearchNews,
   getAllNews
 } = require('../controllers/newsController');
+
+// router.get('/proxy/newsapi', proxyGNewsAPI);
 
 router.post('/journal', auth,  addToJournal);
 

@@ -1,4 +1,3 @@
-// pages/RegisterPage.jsx
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import API from '../api';
@@ -10,16 +9,15 @@ const RegisterPage = () => {
   const handleRegister = async (data) => {
     try {
       await API.post('/api/auth/register', data);
-      alert('Регистрация успешна');
+      alert('Регистрация прошла успешно!');
       navigate('/login');
     } catch (err) {
-      alert('Ошибка регистрации: ' + (err.response?.data?.message || 'попробуйте снова'));
+      alert('Ошибка регистрации: ' + err.response?.data?.message || 'неизвестная ошибка');
     }
   };
 
   return (
     <>
-      <h2>Регистрация</h2>
       <AuthForm type="register" onSubmit={handleRegister} />
     </>
   );

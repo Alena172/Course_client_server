@@ -1,18 +1,20 @@
-// Navbar.jsx
-import React, { useContext } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import React from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import './Navbar.css';
 
 const Navbar = () => {
-  const { isAuthenticated, logout } = useAuth();
-  const navigate = useNavigate();
   const location = useLocation();
+  const navigate = useNavigate();
+
+  // Проверяем авторизацию по наличию токена в localStorage
+  const isAuthenticated = !!localStorage.getItem('token');
 
   const handleLogout = () => {
+    // Очищаем данные авторизации
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    logout();
+    
+    // Перенаправляем на страницу входа
     navigate('/login');
   };
 
@@ -20,17 +22,24 @@ const Navbar = () => {
     <nav className="navbar">
       <div className="navbar-brand">NewsRec</div>
       <ul className="navbar-links">
-        <li className={location.pathname === '/news' ? 'active' : ''}>
-          <Link to="/news">Главная</Link>
-        </li>
-        <li className={location.pathname === '/journal' ? 'active' : ''}>
-          <Link to="/journal">Журнал</Link>
-        </li>
+        {!isAuthenticated && (
+          <li className={location.pathname === '/login' ? 'active' : ''}>
+            <Link to="/login">Вход</Link>
+          </li>
+        )}
+        {isAuthenticated && (
+          <li className={location.pathname === '/news' ? 'active' : ''}>
+            <Link to="/news">Главная</Link>
+          </li>
+        )}
+        {isAuthenticated && (
+          <li className={location.pathname === '/journal' ? 'active' : ''}>
+            <Link to="/journal">Журнал</Link>
+          </li>
+        )}
         <li className={location.pathname === '/allnews' ? 'active' : ''}>
           <Link to="/allnews">Все новости</Link>
         </li>
-
-        {/* Кнопка выхода */}
         {isAuthenticated && (
           <li>
             <button className="logout-button" onClick={handleLogout}>

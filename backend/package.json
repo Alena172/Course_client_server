@@ -21,7 +21,6 @@
           "cheerio": "^1.0.0",
           "chrome-aws-lambda": "^10.1.0",
           "compromise": "^14.14.4",
-          "cookie-parser": "^1.4.7",
           "cors": "^2.8.5",
           "dotenv": "^16.5.0",
           "express": "^5.1.0",
