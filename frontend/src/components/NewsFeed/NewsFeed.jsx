@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import SearchNews from './SearchNews';
-import Recommendations from './Recommendations';
-import LatestNews from './LatestNews';
+import SearchNews from '../SearchNews/SearchNews';
+import Recommendations from '../Recommendations/Recommendations';
+import LatestNews from '../LatestNews/LatestNews';
 import './NewsFeed.css';
 
 const NewsFeed = () => {

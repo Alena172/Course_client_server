@@ -3,9 +3,9 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import NewsPage from './pages/NewsPage';
-import UserJournal from './components/UserJournal';
+import UserJournal from './components/UserJournal/UserJournal';
 import AllNewsPage from './pages/AllNewsPage';
-import Navbar from './components/Navbar';
+import Navbar from './components/Navbar/Navbar';
 
 function App() {
   return (

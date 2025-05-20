@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './LatestNews.css';
-import API from '../api';
+import API from '../../api';
 
 const formatDate = (dateString) => {
   const options = { year: 'numeric', month: 'long', day: 'numeric' };
