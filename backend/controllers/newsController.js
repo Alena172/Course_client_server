@@ -74,6 +74,26 @@ function extractKeywords(text) {
   return unique.slice(0, 5);
 }
 
+function cleanAndExtractText(text) {
+  let cleaned = text.replace(/\s+/g, ' ').trim();
+
+  // Удаление BST в начале строки, даже если оно склеено с чем-то
+  if (cleaned.toLowerCase().startsWith('bst')) {
+    cleaned = cleaned.slice(3); // убираем первые 3 символа — "BST"
+  }
+
+  // Дополнительная очистка
+  cleaned = cleaned
+    .replace(/^[\d\w\s,.:;%\-]+?(?=\s?[A-Z])/g, '') // удаляем начальный мусор
+    .replace(/([a-zA-Z])([\.!?])([A-Za-z])/g, '$1$2 $3') // разделяем предложения без пробела после точки
+    .replace(/(\d)([A-Za-z])/g, '$1 $2') // разделяем число и букву
+    .replace(/([a-z])([A-Z])/g, '$1 $2') // camelCase → два слова
+    .replace(/\s+/g, ' ') // лишние пробелы
+    .trim();
+
+  return cleaned;
+}
+
 // === Параллельная обработка одной статьи через node-fetch и cheerio ===
 async function processArticle(article) {
   try {
@@ -98,8 +118,11 @@ async function processArticle(article) {
       .slice(0, 2000)
       .trim();
 
+    // Чистим текст от мусора и разделяем слова
+    const cleanedFullText = cleanAndExtractText(fullText);
+
     // Обрезаем до 200 символов
-    const shortDescription = fullText.replace(/\s+/g, ' ').slice(0, 200);
+    const shortDescription = cleanedFullText.slice(0, 200);
 
     // Извлекаем теги из заголовка + текста
     const keywords = extractKeywords(article.webTitle + ' ' + fullText);

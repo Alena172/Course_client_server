@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import './AllNewsPage.css';
+import './Recommendations.css';
 import API from '../api';
 
 const formatDate = (dateString) => {
@@ -90,9 +90,6 @@ const Recommendations = () => {
   return (
     <div className="all-news-page">
       <h1>Рекомендуем вам</h1>
-
-      {/* Сообщения */}
-      {loading && <span className="loading-text">Загрузка...</span>}
       {error && <p className="error-message">{error}</p>}
 
       {/* Список рекомендаций */}
@@ -108,9 +105,6 @@ const Recommendations = () => {
               <div className="news-content">
                 <h3>{article.title}</h3>
                 <p className="published-at">{formatDate(article.publishedAt)}</p>
-                <a href={article.url} target="_blank" rel="noopener noreferrer" className="read-more">
-                  Читать далее
-                </a>
                 <div className="categories">
                   {article.categories.map(cat => (
                     <span key={cat} className="category-tag">
@@ -141,7 +135,7 @@ const Recommendations = () => {
           ))
         ) : (
           <p className="no-results">
-            {loading ? 'Загрузка...' : error ? 'Нет рекомендаций' : 'Добавьте статьи в журнал'}
+            {loading ? '' : error ? 'Нет рекомендаций' : 'Добавьте статьи в журнал'}
           </p>
         )}
       </div>

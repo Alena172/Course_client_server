@@ -1,5 +1,42 @@
-/* Добавьте эти стили в ваш файл UserJournal.css */
+/* === Общий шрифт === */
+.journal-container,
+.journal-container * {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
 
+/* === Цвета === */
+:root {
+  --primary-color: #007bff;
+  --primary-hover: #0056b3;
+  --danger-color: #dc3545;
+  --danger-bg: #f8d7da;
+  --success-color: #28a745;
+  --gray-light: #f8f9fa;
+  --gray-medium: #e9ecef;
+  --gray-dark: #666;
+  --text-dark: #222;
+  --text-muted: #555;
+  --border-color: #ccc;
+  --background-white: #fff;
+  --link-color: #007bff;
+  --link-hover: #0056b3;
+  --delete-color: #e74c3c;
+  --delete-bg: #f8f9fa;
+  --delete-hover-bg: #e74c3c;
+  --delete-hover-color: white;
+  --delete-border: #ddd;
+}
+
+/* === Цвета текста и фона === */
+.journal-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+  background-color: var(--gray-light);
+  color: var(--text-dark);
+}
+
+/* === Заголовок страницы === */
 .journal-header {
   display: flex;
   justify-content: space-between;
@@ -10,7 +47,7 @@
 }
 
 .home-button {
-  background-color: #4a6fa5;
+  background-color: var(--primary-color);
   color: white;
   border: none;
   padding: 10px 20px;
@@ -28,7 +65,7 @@
 }
 
 .home-button:hover {
-  background-color: #3a5a80;
+  background-color: var(--primary-hover);
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
@@ -37,28 +74,30 @@
   transform: translateY(0);
 }
 
-/* Остальные существующие стили... */
-.journal-container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px;
-}
-
-.loading, .error {
+/* === Сообщения === */
+.loading,
+.error {
   text-align: center;
   padding: 20px;
   font-size: 1.1rem;
 }
 
 .error {
-  color: #e74c3c;
+  color: var(--danger-color);
+  background-color: var(--danger-bg);
+  border-left: 4px solid var(--danger-color);
+  margin: 20px;
+  border-radius: 8px;
 }
 
 .empty {
   text-align: center;
   padding: 40px;
   font-size: 1.1rem;
-  color: #666;
+  color: var(--gray-dark);
+  background-color: var(--gray-light);
+  border-radius: 8px;
+  margin: 20px;
 }
 
 .entries {
@@ -72,7 +111,7 @@
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  background: white;
+  background: var(--background-white);
 }
 
 .image-wrapper {
@@ -109,21 +148,21 @@
 .header h3 {
   margin: 0;
   font-size: 1.2rem;
-  color: #2c3e50;
+  color: var(--text-dark);
 }
 
 .source {
-  background-color: #f0f0f0;
+  background-color: var(--gray-medium);
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 0.8rem;
-  color: #666;
+  color: var(--gray-dark);
 }
 
 .description {
-  color: #555;
+  color: var(--text-muted);
   font-size: 0.95rem;
-  line-height: 1.5;
+  line-height: 1.4;
   margin-bottom: 15px;
   flex-grow: 1;
 }
@@ -136,7 +175,7 @@
 
 .date {
   font-size: 0.85rem;
-  color: #7f8c8d;
+  color: var(--gray-dark);
 }
 
 .actions {
@@ -145,50 +184,35 @@
 }
 
 .link {
-  color: #4a6fa5;
+  color: var(--link-color);
   text-decoration: none;
-  font-weight: 500;
+  font-weight: normal;
   transition: color 0.2s;
 }
 
+  /* font-size: 1rem;
+  color: #007bff;
+  text-decoration: none;
+  font-weight: normal; */
+
 .link:hover {
-  color: #3a5a80;
+  color: var(--link-hover);
   text-decoration: underline;
 }
 
 .delete-btn {
-  background-color: #f8f9fa;
-  color: #e74c3c;
-  border: 1px solid #ddd;
-  padding: 5px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  transition: all 0.2s;
+    background-color: var(--background-white);
+    color: var(--delete-color);
+    border: none;
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s;
 }
 
 .delete-btn:hover {
-  background-color: #e74c3c;
-  color: white;
-  border-color: #e74c3c;
-}
-
-@media (max-width: 768px) {
-  .entry {
-    flex-direction: column;
-  }
-  
-  .image-wrapper {
-    width: 100%;
-    height: 180px;
-  }
-  
-  .journal-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  
-  .home-button {
-    width: 100%;
-  }
+  background-color: var(--delete-hover-bg);
+  color: var(--delete-hover-color);
+  border-color: var(--delete-hover-bg);
 }

@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import './AllNewsPage.css';
+import './LatestNews.css';
 import API from '../api';
+
+const formatDate = (dateString) => {
+  const options = { year: 'numeric', month: 'long', day: 'numeric' };
+  return new Date(dateString).toLocaleDateString('ru-RU', options);
+};
 
 const LatestNews = ({ onAddToJournal }) => {
   const [news, setNews] = useState([]);
@@ -87,9 +92,6 @@ const LatestNews = ({ onAddToJournal }) => {
   return (
     <div className="all-news-page">
       <h1>Последние новости</h1>
-
-      {/* Сообщения */}
-      {loading && <span className="loading-text">Загрузка...</span>}
       {error && <p className="error-message">{error}</p>}
 
       {/* Список новостей */}
@@ -104,10 +106,7 @@ const LatestNews = ({ onAddToJournal }) => {
               )}
               <div className="news-content">
                 <h3>{article.title}</h3>
-                <p className="published-at">{new Date(article.publishedAt).toLocaleDateString()}</p>
-                <a href={article.url} target="_blank" rel="noopener noreferrer" className="read-more">
-                  Читать далее
-                </a>
+                <p className="published-at">{formatDate(article.publishedAt)}</p>
                 <div className="categories">
                   {article.categories.map(cat => (
                     <span key={cat} className="category-tag">
@@ -138,7 +137,7 @@ const LatestNews = ({ onAddToJournal }) => {
           ))
         ) : (
           <p className="no-results">
-            {loading ? 'Загрузка...' : error ? 'Нет новостей' : 'Новостей не найдено'}
+            {loading ? '' : error ? 'Нет новостей' : 'Новостей не найдено'}
           </p>
         )}
       </div>
