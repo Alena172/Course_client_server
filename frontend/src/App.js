@@ -18,6 +18,7 @@ function App() {
         <Route path="/news" element={<NewsPage />} />
         <Route path="/journal" element={<UserJournal />} />
         <Route path="/allnews" element={<AllNewsPage />} />
+        <Route path="*" element={<Navigate to="/news"/>} />
       </Routes>
     </>
   );
