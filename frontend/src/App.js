@@ -6,6 +6,7 @@ import NewsPage from './pages/NewsPage';
 import UserJournal from './components/UserJournal';
 import AllNewsPage from './pages/AllNewsPage';
 import Navbar from './components/Navbar';
+import PrivateRoute from './components/PrivateRoute';
 
 function App() {
   return (
@@ -16,11 +17,10 @@ function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/news" element={<NewsPage />} />
-        <Route path="/journal" element={<UserJournal />} />
         <Route path="/allnews" element={<AllNewsPage />} />
+        <Route path="/journal" element={<UserJournal />} />
       </Routes>
     </>
   );
 }
-
 export default App;
