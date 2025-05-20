@@ -464,6 +464,41 @@ exports.getUserJournal = async (req, res) => {
   }
 };
 
+// Стоп-слова (можно расширять)
+const stopWords = new Set([
+  'the', 'and', 'a', 'an', 'in', 'on', 'to', 'of', 'for', 'with', 'is', 'are', 'was', 'were',
+  'it', 'this', 'that', 'they', 'we', 'you', 'he', 'she', 'his', 'her', 'their', 'our', 'my'
+]);
+
+function analyzeUserInterests(journalEntries) {
+  const wordFrequency = {};
+
+  for (const entry of journalEntries) {
+    const titleWords = extractKeywords(entry.title || '');
+    const descriptionWords = extractKeywords(entry.description || '');
+
+    // Добавляем слова из заголовка с большим весом
+    for (const word of titleWords) {
+      if (!stopWords.has(word.toLowerCase())) {
+        wordFrequency[word] = (wordFrequency[word] || 0) + 2;
+      }
+    }
+
+    // Слова из описания с меньшим весом
+    for (const word of descriptionWords) {
+      if (!stopWords.has(word.toLowerCase())) {
+        wordFrequency[word] = (wordFrequency[word] || 0) + 1;
+      }
+    }
+  }
+
+  // Преобразуем в массив и сортируем по частоте
+  const sortedWords = Object.entries(wordFrequency)
+    .filter(([word]) => word.length > 2) // игнорируем короткие слова
+    .sort((a, b) => b[1] - a[1]);
+
+  return sortedWords.map(([word]) => word);
+}
 
 /**
  * Получает рекомендации для пользователя на основе его журнала
@@ -477,7 +512,6 @@ exports.getRecommendations = async (req, res) => {
   }
 
   try {
-    // Получаем журнал пользователя
     const journalEntries = await News.find({ userId }).lean();
     if (!journalEntries.length) {
       return res.json({
@@ -489,18 +523,15 @@ exports.getRecommendations = async (req, res) => {
       });
     }
 
-    // Извлекаем ключевые слова из журнала
-    const allKeywords = [];
-    for (const entry of journalEntries) {
-      const keywords = extractKeywords(entry.title + ' ' + entry.description);
-      allKeywords.push(...keywords);
-    }
-    const uniqueKeywords = [...new Set(allKeywords)];
+    // Анализ интересов на основе частотности слов
+    const topKeywords = analyzeUserInterests(journalEntries);
 
-    // Фоллбэк, если нет тегов
-    const searchQuery = uniqueKeywords.length > 0 ? uniqueKeywords.join(' OR ') : 'technology business science sports';
+    // Берём топ-3 или меньше, если их мало
+    const searchQuery = topKeywords.length > 0
+      ? topKeywords.slice(0, Math.min(5, topKeywords.length)).join(' OR ')
+      : 'technology business science sports'; // fallback
 
-    // Запрашиваем статьи у Guardian
+    // Запрос к Guardian API
     const guardianResponse = await axios.get('https://content.guardianapis.com/search ', {
       params: {
         'api-key': process.env.GUARDIAN_API_KEY,
@@ -521,7 +552,9 @@ exports.getRecommendations = async (req, res) => {
       processed.push(...results);
     }
 
-    // Поддержка пагинации
+    // Перемешиваем результаты перед отправкой
+    shuffleArray(processed);
+
     const totalResults = guardianResponse.data.response?.total || processed.length;
     const totalPages = Math.ceil(totalResults / maxPerPage);
 
@@ -538,6 +571,16 @@ exports.getRecommendations = async (req, res) => {
     return res.status(500).json({ error: 'Не удалось получить рекомендации' });
   }
 };
+
+function shuffleArray(arr) {
+  const array = [...arr];
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
 
 /**
  * Строгий поиск новостей — возвращает только точные совпадения

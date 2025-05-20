@@ -106,6 +106,9 @@ const LatestNews = ({ onAddToJournal }) => {
               )}
               <div className="news-content">
                 <h3>{article.title}</h3>
+                <p className="news-description">
+                  {article.description || 'Описание отсутствует'}
+                </p>
                 <p className="published-at">{formatDate(article.publishedAt)}</p>
                 <div className="categories">
                   {article.categories.map(cat => (
