@@ -58,7 +58,7 @@
    ```
 
 ## Демонстрация
-Веб-приложение доступно по ссылке: [https://course-client-server.vercel.app](https://course-client-server.vercel.app)
+Веб-приложение доступно по ссылке:[(https://course-client-server.vercel.app)](https://course-client-server.vercel.app/allnews)
 
 ## Исходный код
 Исходный код проекта доступен на GitHub: [https://github.com/Alena172/Course_client_server](https://github.com/Alena172/Course_client_server)
