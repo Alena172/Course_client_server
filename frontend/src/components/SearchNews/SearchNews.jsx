@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import './SearchNews.css';
 import API from '../../api';
 
@@ -7,20 +7,18 @@ const formatDate = (dateString) => {
   return new Date(dateString).toLocaleDateString('ru-RU', options);
 };
 
-const SearchNews = ({ onAddToJournal, onSearch }) => {
+const SearchNews = ({onSearch }) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
-  const [totalResults, setTotalResults] = useState(0);
+  const [setTotalResults] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const searchTimer = useRef(null);
 
-  // === Функция поиска ===
   const fetchPage = useCallback(async (searchQuery, pageNumber, append = false) => {
     if (!searchQuery.trim()) return;
-
     setIsSearching(true);
     try {
       const response = await API.get('/api/news/strict-search', {
@@ -30,7 +28,6 @@ const SearchNews = ({ onAddToJournal, onSearch }) => {
           maxPerPage: 10
         }
       });
-
       const allArticles = response.data.articles || [];
       const total = response.data.totalResults || allArticles.length;
       const pages = response.data.totalPages || Math.ceil(total / 10);
@@ -43,15 +40,9 @@ const SearchNews = ({ onAddToJournal, onSearch }) => {
         setCurrentPage(pageNumber);
         setTotalPages(pages);
       }
-
       setHasMore(response.data.currentPage < response.data.totalPages);
-
-      // Вызываем onSearch с данными
       onSearch?.({ query: searchQuery, results: allArticles });
-
-      // Прокрутка наверх
       window.scrollTo({ top: 0, behavior: 'smooth' });
-
     } catch (err) {
       console.error('Ошибка поиска:', err.message);
       if (!append) {
@@ -65,13 +56,13 @@ const SearchNews = ({ onAddToJournal, onSearch }) => {
     }
   }, []);
 
-  // === Подгрузка следующей страницы ===
+
   const handlePageClick = (pageNumber) => {
     if (isSearching || pageNumber === currentPage) return;
     fetchPage(query, pageNumber, false);
   };
 
-  // === Изменение поискового поля с задержкой ===
+
   const handleInputChange = (e) => {
     const value = e.target.value;
     setQuery(value);
@@ -86,7 +77,7 @@ const SearchNews = ({ onAddToJournal, onSearch }) => {
       return;
     }
 
-    // Задержка перед поиском
+
     if (searchTimer.current) {
       clearTimeout(searchTimer.current);
     }
@@ -96,7 +87,7 @@ const SearchNews = ({ onAddToJournal, onSearch }) => {
     }, 1000);
   };
 
-  // === Очистка таймера при размонтировании ===
+
   useEffect(() => {
     return () => {
       if (searchTimer.current) {
@@ -105,16 +96,14 @@ const SearchNews = ({ onAddToJournal, onSearch }) => {
     };
   }, []);
 
-  // === Сохранение в журнал ===
+
   const handleAddToJournal = async (newsItem) => {
     const userId = localStorage.getItem('userId');
     const token = localStorage.getItem('token');
-
     if (!userId || !token) {
       alert('Авторизуйтесь для добавления в журнал');
       return;
     }
-
     try {
       await API.post('/api/news/journal', {
         ...newsItem,
@@ -124,7 +113,6 @@ const SearchNews = ({ onAddToJournal, onSearch }) => {
           Authorization: `Bearer ${token}`
         }
       });
-
       alert('Статья сохранена в журнале');
     } catch (err) {
       if (err.response?.status === 409) {
@@ -136,13 +124,10 @@ const SearchNews = ({ onAddToJournal, onSearch }) => {
     }
   };
 
-  // === Рендер пагинации ===
+
   const renderPagination = () => {
     if (totalPages <= 1) return null;
-
     const pages = [];
-
-    // Добавляем кнопку "← Назад"
     pages.push(
       <button
         key="prev"
@@ -153,8 +138,6 @@ const SearchNews = ({ onAddToJournal, onSearch }) => {
         ← Назад
       </button>
     );
-
-    // Первая страница (если текущая не первая)
     if (currentPage !== 1) {
       pages.push(
         <button
@@ -167,13 +150,9 @@ const SearchNews = ({ onAddToJournal, onSearch }) => {
         </button>
       );
     }
-
-    // Троеточие между первой и текущей
     if (currentPage > 3) {
       pages.push(<span key="dots-start" className="pagination-dots">…</span>);
     }
-
-    // Две предыдущие страницы
     for (let i = -2; i <= -1; i++) {
       const num = currentPage + i;
       if (num > 1 && num <= totalPages) {
@@ -189,15 +168,11 @@ const SearchNews = ({ onAddToJournal, onSearch }) => {
         );
       }
     }
-
-    // Текущая страница
     pages.push(
       <button key={currentPage} className="page-number active" disabled>
         {currentPage}
       </button>
     );
-
-    // Две следующие страницы
     for (let i = 1; i <= 2; i++) {
       const num = currentPage + i;
       if (num < totalPages) {
@@ -213,8 +188,6 @@ const SearchNews = ({ onAddToJournal, onSearch }) => {
         );
       }
     }
-
-    // Последняя страница (если текущая не последняя)
     if (currentPage < totalPages - 2) {
       pages.push(<span key="dots-end" className="pagination-dots">…</span>);
     }
@@ -231,8 +204,6 @@ const SearchNews = ({ onAddToJournal, onSearch }) => {
         </button>
       );
     }
-
-    // Кнопка "Вперед →"
     pages.push(
       <button
         key="next"
@@ -246,12 +217,9 @@ const SearchNews = ({ onAddToJournal, onSearch }) => {
 
     return <div className="pagination">{pages}</div>;
   };
-
 return (
   <div className="all-news-page">
     <h2>Поиск новостей</h2>
-
-    {/* Поле поиска + очистка */}
     <div className="filters">
       <input
         type="text"
@@ -260,7 +228,6 @@ return (
         onChange={handleInputChange}
         className="search-input"
       />
-
       {query && results.length > 0 && (
         <button
           className="clear-search"
@@ -275,12 +242,7 @@ return (
         </button>
       )}
     </div>
-
-    {/* Сообщения */}
     {isSearching && <span className="loading-text">Идёт поиск...</span>}
-    {/* {!isSearching && results.length === 0 && query && <p>Ничего не найдено</p>} */}
-
-    {/* Список статей */}
     <div className="news-grid">
       {results.map((article, index) => (
         <div key={`search-${index}`} className="news-card">
@@ -300,8 +262,6 @@ return (
               ))}
             </div>
           </div>
-
-          {/* Кнопки действий внизу карточки */}
           <div className="news-actions">
             <a
               href={article.url}
@@ -321,8 +281,6 @@ return (
         </div>
       ))}
     </div>
-
-    {/* Пагинация — теперь не исчезает при загрузке */}
     {query.trim() && results.length > 0 && totalPages > 1 && (
       <div className="load-more-container">
         <div className="pagination-wrapper">

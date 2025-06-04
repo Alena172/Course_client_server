@@ -15,15 +15,6 @@ const UserSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  interests: {
-    type: [String],
-    default: [],
-  },
-  history: [
-    {
-      type: String,
-    },
-  ],
 });
 
 module.exports = mongoose.model('User', UserSchema);

@@ -11,8 +11,6 @@ const NewsSchema = new mongoose.Schema({
   publishedAt: {type: Date, default: Date.now},
   author: {type: String, default: ''},
   keywords: {type: [String], default: []},
-  categories: {type: [String], default: ['general']},
-  isFavorite: {type: Boolean, default: false}
 }, 
 
 {
@@ -21,3 +19,4 @@ const NewsSchema = new mongoose.Schema({
 });
 
 module.exports = mongoose.model('News', NewsSchema);
+

@@ -5,19 +5,12 @@ import './Navbar.css';
 const Navbar = () => {
   const location = useLocation();
   const navigate = useNavigate();
-
-  // Проверяем авторизацию по наличию токена в localStorage
   const isAuthenticated = !!localStorage.getItem('token');
-
   const handleLogout = () => {
-    // Очищаем данные авторизации
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    
-    // Перенаправляем на страницу входа
     navigate('/login');
   };
-
   return (
     <nav className="navbar">
       <div className="navbar-brand">NewsRec</div>

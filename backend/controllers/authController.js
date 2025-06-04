@@ -33,24 +33,19 @@ exports.registerUser = async (req, res) => {
 
   exports.loginUser = async (req, res) => {
     const { email, password } = req.body;
-  
     try {
       const user = await User.findOne({ email });
       if (!user) {
         return res.status(400).json({ message: 'Пользователь не найден' });
       }
-  
       const isMatch = await bcrypt.compare(password, user.password);
       if (!isMatch) {
         return res.status(400).json({ message: 'Неверный пароль' });
       }
-  
       if (!process.env.JWT_SECRET) {
         throw new Error('JWT секрет не настроен');
       }
-  
       const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
-      
       res.json({
         token,
         user: {
@@ -61,10 +56,10 @@ exports.registerUser = async (req, res) => {
         },
       });
     } catch (err) {
-      console.error('Детали ошибки входа:', err); // Подробное логирование
+      console.error('Детали ошибки входа:', err);
       res.status(500).json({ 
         message: 'Ошибка сервера',
-        error: err.message // Отправляем реальное сообщение об ошибке (для разработки)
+        error: err.message
       });
     }
 };

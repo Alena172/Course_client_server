@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import './AllNewsPage.css';
 import API from '../api';
 import DatePicker from 'react-datepicker';
@@ -11,10 +11,11 @@ const CATEGORIES = [
   { value: 'business', label: 'Бизнес' },
   { value: 'science', label: 'Наука' },
   { value: 'politics', label: 'Политика' },
-  { value: 'sports', label: 'Спорт' },
+  { value: 'sport', label: 'Спорт' },
   { value: 'world', label: 'Мир' },
   { value: 'culture', label: 'Культура' },
-  { value: 'healthcare', label: 'Здоровье' }
+  { value: 'games', label: 'Игры' },
+  { value: 'film', label: 'Фильмы' },
 ];
 
 const formatDate = (dateString) => {
@@ -34,16 +35,14 @@ const AllNewsPage = () => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
 
-  // --- Функция сохранения в журнал ---
+
   const handleAddToJournal = async (newsItem) => {
     const userId = localStorage.getItem('userId');
     const token = localStorage.getItem('token');
-
     if (!userId || !token) {
       alert('Авторизуйтесь для добавления в журнал');
       return;
     }
-
     try {
       const response = await API.post('/api/news/journal', {
         ...newsItem,
@@ -53,7 +52,6 @@ const AllNewsPage = () => {
           Authorization: `Bearer ${token}`
         }
       });
-
       alert('Статья сохранена в вашем журнале');
       console.log('Сохранено:', response.data.entry);
     } catch (err) {
@@ -66,7 +64,7 @@ const AllNewsPage = () => {
     }
   };
 
-  // Загрузка новостей
+
   const fetchNews = async (pageNumber, append = false) => {
     setLoading(true);
     try {
@@ -74,26 +72,20 @@ const AllNewsPage = () => {
         page: pageNumber,
         maxPerPage: 6
       };
-
       if (filters.category) params.category = filters.category;
       if (filters.fromDate) params.from = filters.fromDate.toISOString().split('T')[0];
       if (filters.toDate) params.to = filters.toDate.toISOString().split('T')[0];
       if (filters.selectedTags.length > 0) params.q = filters.selectedTags.join(' OR ');
-
       const endpoint = filters.selectedTags.length > 0 ? '/api/news/search' : '/api/news/all';
-
       const response = await API.get(endpoint, {
         params
       });
-
       const results = response.data.articles || [];
-
       if (append) {
         setNews(prev => [...prev, ...results]);
       } else {
         setNews(results);
       }
-
       const totalPages = Math.ceil(response.data.totalResults / 6);
       setHasMore(pageNumber < totalPages);
 
@@ -145,8 +137,6 @@ const AllNewsPage = () => {
   return (
     <div className="all-news-page">
       <h1>Новости</h1>
-
-      {/* Фильтры */}
       <div className="filters">
         {/* Категория */}
         <div className="filter-group">
@@ -162,8 +152,6 @@ const AllNewsPage = () => {
             <span className="select-icon">▼</span>
           </div>
         </div>
-
-        {/* Дата от */}
         <div className="filter-group">
           <label>Дата от:</label>
           <DatePicker
@@ -179,8 +167,6 @@ const AllNewsPage = () => {
             className="custom-date-picker"
           />
         </div>
-
-        {/* Дата до */}
         <div className="filter-group">
           <label>Дата до:</label>
           <DatePicker
@@ -197,8 +183,6 @@ const AllNewsPage = () => {
             className="custom-date-picker"
           />
         </div>
-
-        {/* Выбранные теги */}
         <div className="filter-group filter-group--tags">
           <label>Активные темы:</label>
           <div className="selected-tags">
@@ -215,8 +199,6 @@ const AllNewsPage = () => {
           </div>
         </div>
       </div>
-
-      {/* Список новостей */}
       <div className="news-grid">
         {news.length > 0 ? (
           news.map((article, index) => (
@@ -228,15 +210,10 @@ const AllNewsPage = () => {
               )}
               <div className="news-content">
                 <h3>{article.title}</h3>
-
-                {/* Описание */}
                 <p className="news-description">
                   {article.description || 'Описание отсутствует'}
                 </p>
-
                 <p className="published-at">{formatDate(article.publishedAt)}</p>
-
-                {/* Контейнер для категорий и тегов */}
                 <div className="categories">
                   {article.categories.map(cat => (
                     <span key={cat} className="category-tag">
@@ -256,8 +233,6 @@ const AllNewsPage = () => {
                   ))}
                 </div>
               </div>
-
-              {/* Блок с кнопками внизу карточки */}
               <div className="news-actions">
                 <a
                   href={article.url}
@@ -280,8 +255,6 @@ const AllNewsPage = () => {
           <p>Новостей не найдено</p>
         )}
       </div>
-
-      {/* Кнопка "Показать ещё" */}
       <div className="load-more-container">
         {loading && <span className="loading-text">Загрузка...</span>}
         {!loading && hasMore && (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import './LatestNews.css';
 import API from '../../api';
 
@@ -14,7 +14,6 @@ const LatestNews = ({ onAddToJournal }) => {
   const [hasMore, setHasMore] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Загрузка новостей с сервера
   const fetchNews = async (pageNumber, append = false) => {
     try {
       setLoading(true);
@@ -45,14 +44,11 @@ const LatestNews = ({ onAddToJournal }) => {
       setLoading(false);
     }
   };
-
-  // Подгрузка следующей страницы
   const loadMore = () => {
     if (!hasMore) return;
     fetchNews(currentPage + 1, true);
   };
 
-  // --- Сохранение в журнал ---
   const handleAddToJournal = async (newsItem) => {
     const userId = localStorage.getItem('userId');
     const token = localStorage.getItem('token');
@@ -66,7 +62,8 @@ const LatestNews = ({ onAddToJournal }) => {
       const response = await API.post('/api/news/journal', {
         ...newsItem,
         userId
-      }, {
+      }, 
+      {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -84,7 +81,6 @@ const LatestNews = ({ onAddToJournal }) => {
     }
   };
 
-  // Первичная загрузка
   useEffect(() => {
     fetchNews(1);
   }, []);
@@ -93,8 +89,6 @@ const LatestNews = ({ onAddToJournal }) => {
     <div className="all-news-page">
       <h1>Последние новости</h1>
       {error && <p className="error-message">{error}</p>}
-
-      {/* Список новостей */}
       <div className="news-grid">
         {news.length > 0 ? (
           news.map((article, index) => (
@@ -118,8 +112,6 @@ const LatestNews = ({ onAddToJournal }) => {
                   ))}
                 </div>
               </div>
-
-              {/* Кнопки действий внизу карточки */}
               <div className="news-actions">
                 <a
                   href={article.url}
@@ -144,8 +136,6 @@ const LatestNews = ({ onAddToJournal }) => {
           </p>
         )}
       </div>
-
-      {/* Кнопка дозагрузки */}
       <div className="load-more-container">
         {loading && <span className="loading-text">Загрузка...</span>}
         {!loading && hasMore && (

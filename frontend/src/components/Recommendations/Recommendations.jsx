@@ -6,7 +6,6 @@ const formatDate = (dateString) => {
   const options = { year: 'numeric', month: 'long', day: 'numeric' };
   return new Date(dateString).toLocaleDateString('ru-RU', options);
 };
-
 const Recommendations = () => {
   const [recommendations, setRecommendations] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -17,26 +16,21 @@ const Recommendations = () => {
   const fetchPage = async (pageNumber, append = false) => {
     setLoading(true);
     setError('');
-
     try {
       const userId = localStorage.getItem('userId');
       if (!userId) throw new Error('Пользователь не авторизован');
-
       const response = await API.get(`/api/news/recommendations/${userId}`, {
         params: {
           page: pageNumber,
           maxPerPage: 6
         }
       });
-
       const results = response.data.recommendations || [];
-
       if (append) {
         setRecommendations(prev => [...prev, ...results]);
       } else {
         setRecommendations(results);
       }
-
       setCurrentPage(pageNumber);
       setHasMore(response.data.currentPage < response.data.totalPages);
 
@@ -86,13 +80,10 @@ const Recommendations = () => {
       }
     }
   };
-
   return (
     <div className="all-news-page">
       <h1>Рекомендуем вам</h1>
       {error && <p className="error-message">{error}</p>}
-
-      {/* Список рекомендаций */}
       <div className="news-grid">
         {recommendations.length > 0 ? (
           recommendations.map((article, index) => (
@@ -116,8 +107,6 @@ const Recommendations = () => {
                   ))}
                 </div>
               </div>
-
-              {/* Кнопки действий внизу карточки */}
               <div className="news-actions">
                 <a
                   href={article.url}
@@ -142,8 +131,6 @@ const Recommendations = () => {
           </p>
         )}
       </div>
-
-      {/* Кнопка дозагрузки */}
       <div className="load-more-container">
         {loading && <span className="loading-text">Загрузка...</span>}
         {!loading && hasMore && (

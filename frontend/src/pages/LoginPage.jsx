@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import API from '../api';
 import AuthForm from '../components/AuthForm/AuthForm';
 
+
 const LoginPage = () => {
     const navigate = useNavigate();
   
@@ -12,16 +13,12 @@ const LoginPage = () => {
           email: formData.email,
           password: formData.password
         });
-    
-        console.log('USER DATA:', response.data.user); // 👈 посмотри в консоли
-    
+        console.log('USER DATA:', response.data.user);
         const user = response.data.user;
         const userId = user._id || user.id;
-    
         localStorage.setItem('user', JSON.stringify(user));
-        localStorage.setItem('userId', userId); // 👈 проверяем, что id не undefined
+        localStorage.setItem('userId', userId);
         localStorage.setItem('token', response.data.token);
-    
         alert('Вы успешно вошли!');
         window.location.href = '/news';
       } catch (err) {
@@ -32,11 +29,6 @@ const LoginPage = () => {
         console.error('Ошибка входа:', err.response?.data || err);
       }
     };
-    
-
-      
-      
-  
     return (
       <>
         <AuthForm type="login" onSubmit={handleLogin} />

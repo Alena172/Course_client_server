@@ -15,7 +15,6 @@ const RegisterPage = () => {
       alert('Ошибка регистрации: ' + err.response?.data?.message || 'неизвестная ошибка');
     }
   };
-
   return (
     <>
       <AuthForm type="register" onSubmit={handleRegister} />

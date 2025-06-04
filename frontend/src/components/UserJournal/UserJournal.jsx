@@ -43,9 +43,9 @@ const UserJournal = () => {
       setLoading(true);
       const response = await API.delete(`api/news/journal/${entryId}`);
       setEntries(prev => prev.filter(e => e._id !== entryId));
-      console.log('Delete successful:', response.data);
+      console.log('Новость удалена из журнала:', response.data);
     } catch (err) {
-      console.error('Delete failed:', {
+      console.error('Удаление не удалось:', {
         error: err,
         response: err.response?.data
       });
@@ -54,7 +54,7 @@ const UserJournal = () => {
         const { data } = await API.get(`api/news/${localStorage.getItem('userId')}/journal`);
         setEntries(data);
       } catch (fetchErr) {
-        console.error('Failed to refresh:', fetchErr);
+        console.error('Не удалось обновить:', fetchErr);
       }
     } finally {
       setLoading(false);
